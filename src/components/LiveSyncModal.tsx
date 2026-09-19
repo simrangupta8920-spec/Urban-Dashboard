@@ -81,8 +81,8 @@ export const LiveSyncModal: React.FC<LiveSyncModalProps> = ({
     setIsSubmitting(true);
     try {
       const success = await onSaveAndConnect(targetUrl, selectedInterval);
-      if (success) {
-        // keep modal open or close based on user workflow
+      if (!success) {
+        setLocalError(config.lastError || 'Failed to connect to Google Sheet. Please check the sharing settings or URL.');
       }
     } catch (err: any) {
       setLocalError(err?.message || 'Failed to connect to Google Sheet.');
@@ -372,6 +372,12 @@ export const LiveSyncModal: React.FC<LiveSyncModalProps> = ({
                   </li>
                   <li>
                     <strong>Enable Public Access:</strong> In Google Sheets, click <strong>Share</strong> (top-right corner). Under <em>General access</em>, change from <em>Restricted</em> to <strong>"Anyone with the link can view"</strong>.
+                  </li>
+                  <li>
+                    <strong>Multi-Month Workbooks:</strong> You can create individual sheets/tabs for each month (e.g. "Aug 2024", "Sep 2024"). All tabs will be detected and aggregated automatically!
+                  </li>
+                  <li>
+                    <strong>Work or University Accounts (e.g. IGDTUW):</strong> If your organization restricts direct sharing outside the domain, click <strong>File &gt; Share &gt; "Publish to web"</strong>, select <strong>"Entire Document"</strong> (or CSV), click <strong>Publish</strong>, and paste that link here.
                   </li>
                   <li>
                     <strong>Copy & Paste:</strong> Click <strong>Copy link</strong> and paste it in the field above, then click <strong>Connect & Start Live Sync</strong>.

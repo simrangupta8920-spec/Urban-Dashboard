@@ -8,15 +8,16 @@ function resolveSheetUrls(rawUrl: string): {
   xlsxUrl?: string;
   csvUrl: string;
   fallbackGvizUrl?: string;
+  pubCsvUrl?: string;
   sheetId?: string;
   gid: string;
 } {
-  const trimmed = rawUrl.trim();
+  const trimmed = rawUrl.trim().replace(/^[<"']+|[>"']+$/g, '');
 
   // Pattern 1: Published to web (spreadsheets/d/e/{pubId}/pub...)
   if (trimmed.includes('/spreadsheets/d/e/')) {
     const pubMatch = trimmed.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]+)/);
-    const gidMatch = trimmed.match(/gid=([0-9]+)/);
+    const gidMatch = trimmed.match(/[?&#]gid=([0-9]+)/);
     const gid = gidMatch ? gidMatch[1] : '0';
     if (pubMatch) {
       const pubId = pubMatch[1];
@@ -24,6 +25,7 @@ function resolveSheetUrls(rawUrl: string): {
         xlsxUrl: `https://docs.google.com/spreadsheets/d/e/${pubId}/pub?output=xlsx`,
         csvUrl: `https://docs.google.com/spreadsheets/d/e/${pubId}/pub?output=csv&gid=${gid}`,
         fallbackGvizUrl: `https://docs.google.com/spreadsheets/d/e/${pubId}/gviz/tq?tqx=out:csv&gid=${gid}`,
+        pubCsvUrl: `https://docs.google.com/spreadsheets/d/e/${pubId}/pub?output=csv&gid=${gid}`,
         sheetId: pubId,
         gid,
       };
@@ -34,13 +36,14 @@ function resolveSheetUrls(rawUrl: string): {
   const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if (match) {
     const sheetId = match[1];
-    const gidMatch = trimmed.match(/gid=([0-9]+)/);
+    const gidMatch = trimmed.match(/[?&#]gid=([0-9]+)/);
     const gid = gidMatch ? gidMatch[1] : '0';
 
     return {
       xlsxUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`,
       csvUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`,
       fallbackGvizUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`,
+      pubCsvUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/pub?output=csv&gid=${gid}`,
       sheetId,
       gid,
     };
@@ -157,34 +160,33 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing or invalid "url" parameter for Google Sheet.' });
       }
 
-      const { xlsxUrl, csvUrl, fallbackGvizUrl, sheetId, gid } = resolveSheetUrls(sheetUrl);
+      const { xlsxUrl, csvUrl, fallbackGvizUrl, pubCsvUrl, sheetId, gid } = resolveSheetUrls(sheetUrl);
 
       // Disable response caching so live sync polls always get the latest sheet revision
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
 
+      const commonHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: '*/*',
+      };
+
       // 1. Attempt to fetch the entire multi-sheet workbook (.xlsx) first
       if (xlsxUrl) {
         try {
           const xlsxResponse = await fetch(xlsxUrl, {
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              ...commonHeaders,
               Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*',
             },
             redirect: 'follow',
           });
 
-          const xlsxContentType = xlsxResponse.headers.get('content-type') || '';
-          if (
-            xlsxResponse.ok &&
-            (xlsxContentType.includes('spreadsheetml') ||
-              xlsxContentType.includes('octet-stream') ||
-              xlsxContentType.includes('excel'))
-          ) {
+          if (xlsxResponse.ok) {
             const buffer = Buffer.from(await xlsxResponse.arrayBuffer());
             // Double check valid ZIP/XLSX magic bytes (0x50 0x4B 0x03 0x04)
-            if (buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4B) {
+            if (buffer.length > 50 && buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04) {
               res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
               res.setHeader('X-Sheet-Id', sheetId || '');
               res.setHeader('X-Sheet-Gid', gid);
@@ -197,52 +199,89 @@ async function startServer() {
         }
       }
 
-      // 2. Fallback to CSV endpoint
-      let fetchUrl = csvUrl;
-      let response = await fetch(fetchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: 'text/csv, text/plain, */*',
-        },
-        redirect: 'follow',
+      // Helper to test if a response is a Google login/HTML redirect
+      const isLoginOrHtml = (status: number, cType: string, txt: string) => {
+        if (status === 401 || status === 403) return true;
+        if (txt.includes('accounts.google.com/ServiceLogin') || txt.includes('ServiceLogin?service=wise')) return true;
+        if (cType.includes('text/html') && (txt.includes('<!DOCTYPE html') || txt.includes('<html'))) return true;
+        return false;
+      };
+
+      // 2. Attempt Google Visualization API endpoint (gviz/tq?tqx=out:csv)
+      // This is Google's official public data export endpoint and works reliably on shared sheets
+      if (fallbackGvizUrl) {
+        try {
+          const gvizRes = await fetch(fallbackGvizUrl, {
+            headers: commonHeaders,
+            redirect: 'follow',
+          });
+          const cType = gvizRes.headers.get('content-type') || '';
+          const txt = await gvizRes.text();
+
+          if (gvizRes.ok && !isLoginOrHtml(gvizRes.status, cType, txt) && (txt.includes(',') || txt.includes('\n'))) {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('X-Sheet-Id', sheetId || '');
+            res.setHeader('X-Sheet-Gid', gid);
+            res.setHeader('X-Synced-At', new Date().toISOString());
+            return res.status(200).send(txt);
+          }
+        } catch (gvizErr) {
+          console.warn('[Sync] GViz export attempt error:', gvizErr);
+        }
+      }
+
+      // 3. Attempt direct CSV export URL
+      if (csvUrl) {
+        try {
+          const csvRes = await fetch(csvUrl, {
+            headers: {
+              ...commonHeaders,
+              Accept: 'text/csv, text/plain, */*',
+            },
+            redirect: 'follow',
+          });
+          const cType = csvRes.headers.get('content-type') || '';
+          const txt = await csvRes.text();
+
+          if (csvRes.ok && !isLoginOrHtml(csvRes.status, cType, txt) && (txt.includes(',') || txt.includes('\n'))) {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('X-Sheet-Id', sheetId || '');
+            res.setHeader('X-Sheet-Gid', gid);
+            res.setHeader('X-Synced-At', new Date().toISOString());
+            return res.status(200).send(txt);
+          }
+        } catch (csvErr) {
+          console.warn('[Sync] CSV export attempt error:', csvErr);
+        }
+      }
+
+      // 4. Attempt published web CSV URL
+      if (pubCsvUrl && pubCsvUrl !== csvUrl) {
+        try {
+          const pubRes = await fetch(pubCsvUrl, {
+            headers: commonHeaders,
+            redirect: 'follow',
+          });
+          const cType = pubRes.headers.get('content-type') || '';
+          const txt = await pubRes.text();
+
+          if (pubRes.ok && !isLoginOrHtml(pubRes.status, cType, txt) && (txt.includes(',') || txt.includes('\n'))) {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('X-Sheet-Id', sheetId || '');
+            res.setHeader('X-Sheet-Gid', gid);
+            res.setHeader('X-Synced-At', new Date().toISOString());
+            return res.status(200).send(txt);
+          }
+        } catch (pubErr) {
+          console.warn('[Sync] Pub CSV attempt error:', pubErr);
+        }
+      }
+
+      // If all endpoints failed or returned login redirects:
+      return res.status(403).json({
+        error: 'Unable to access sheet data. If your sheet is already shared with "Anyone with the link can view", organization/work policies may restrict external downloads. To resolve: In Google Sheets, click File > Share > "Publish to web" > choose "Entire Document" (or CSV), click "Publish", and paste the published link here.',
+        isPrivate: true,
       });
-
-      // If standard export failed or redirected to login, try the gviz fallback endpoint
-      if (!response.ok && fallbackGvizUrl) {
-        fetchUrl = fallbackGvizUrl;
-        response = await fetch(fetchUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Accept: 'text/csv, text/plain, */*',
-          },
-          redirect: 'follow',
-        });
-      }
-
-      const contentType = response.headers.get('content-type') || '';
-      const text = await response.text();
-
-      // Check if Google redirected to a private login page
-      if (text.includes('accounts.google.com/ServiceLogin') || text.includes('ServiceLogin?service=wise') || (contentType.includes('text/html') && !text.includes(','))) {
-        return res.status(403).json({
-          error: 'This Google Sheet is currently private. Please open your Google Sheet, click "Share" in the top right, change General access to "Anyone with the link can view", and try again.',
-          isPrivate: true,
-        });
-      }
-
-      if (!response.ok) {
-        return res.status(response.status).json({
-          error: `Failed to fetch spreadsheet from Google (HTTP ${response.status}). Ensure the sheet URL is correct and public.`,
-        });
-      }
-
-      // Return CSV response
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('X-Sheet-Id', sheetId || '');
-      res.setHeader('X-Sheet-Gid', gid);
-      res.setHeader('X-Synced-At', new Date().toISOString());
-
-      return res.status(200).send(text);
     } catch (err: any) {
       console.error('[API /api/sync-sheet error]:', err);
       return res.status(500).json({

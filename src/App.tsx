@@ -113,6 +113,14 @@ export default function App() {
   // Time granularity for hero chart: 'daily' | 'weekly' | 'monthly'
   const [granularity, setGranularity] = useState<Granularity>('monthly');
 
+  const handleFilterChange = (newFilter: FilterState) => {
+    // When a specific month is selected (e.g. August), switch granularity to daily so days 1st through 31st are displayed
+    if (newFilter.month !== 'ALL' && newFilter.month !== filters.month && granularity === 'monthly') {
+      setGranularity('daily');
+    }
+    setFilters(newFilter);
+  };
+
   // Determine active full records based on mode
   const currentDataset = dataSourceMode === 'demo' ? demoDataset : userDataset;
 
@@ -320,13 +328,27 @@ export default function App() {
   };
 
   // Live Sync: Fetch and process Google Sheets data
-  const performLiveSync = async (sheetUrl: string, isManual = false, silent = false): Promise<boolean> => {
-    if (!sheetUrl) return false;
+  const performLiveSync = async (sheetUrl: string, isManual = false, silent = false): Promise<{ success: boolean; error?: string }> => {
+    if (!sheetUrl) return { success: false, error: 'Empty sheet URL' };
     setLiveSyncStatus('syncing');
 
     try {
-      const { rawText, sheetId } = await fetchLiveSheetData(sheetUrl);
-      const { records, report } = await parseUploadedFile(rawText, activeMapping.date ? activeMapping : undefined);
+      const { rawText, arrayBuffer, sheetId } = await fetchLiveSheetData(sheetUrl);
+      const dataToParse = arrayBuffer || rawText;
+
+      if (!dataToParse) {
+        throw new Error('No spreadsheet data received from Google Sheets. Please verify the URL.');
+      }
+
+      // Store raw buffer in state so column mapping editor also functions smoothly
+      if (arrayBuffer) {
+        setUserRawBuffer(arrayBuffer);
+      } else if (typeof rawText === 'string') {
+        const enc = new TextEncoder();
+        setUserRawBuffer(enc.encode(rawText).buffer);
+      }
+
+      const { records, report } = await parseUploadedFile(dataToParse, activeMapping.date ? activeMapping : undefined);
 
       if (!report.isValid) {
         if (report.missingColumns.length > 0) {
@@ -335,11 +357,12 @@ export default function App() {
           setMissingColumns(report.missingColumns);
           setIsMapperOpen(true);
           setLiveSyncStatus('error');
+          const errText = `Missing columns: ${report.missingColumns.join(', ')}`;
           setLiveSyncConfig(prev => ({
             ...prev,
-            lastError: `Missing columns: ${report.missingColumns.join(', ')}`,
+            lastError: errText,
           }));
-          return false;
+          return { success: false, error: errText };
         }
         throw new Error(report.errors.join(' '));
       }
@@ -353,7 +376,7 @@ export default function App() {
 
       const title = sheetId && sheetId !== 'sample-stream'
         ? `Google Sheet (${sheetId.slice(0, 6)}...${sheetId.slice(-4)})`
-        : 'Urban Organic Sample Live Stream';
+        : 'Urban Organic Multi-Month Live Stream';
 
       const updatedConfig: LiveSyncConfig = {
         ...liveSyncConfig,
@@ -367,14 +390,15 @@ export default function App() {
       saveStoredLiveSyncConfig(updatedConfig);
 
       if (isManual || prevCount !== records.length) {
+        const sheetCount = report.sheetsSummary && report.sheetsSummary.length > 0 ? report.sheetsSummary.length : 1;
         setPdfToast({
-          message: `Live Sync: Refreshed with ${records.length.toLocaleString()} transactions from Google Sheet`,
+          message: `Live Sync: Refreshed ${records.length.toLocaleString()} transactions across ${sheetCount} workbook tab${sheetCount > 1 ? 's' : ''}`,
           type: 'success',
         });
         setTimeout(() => setPdfToast(null), 4000);
       }
 
-      return true;
+      return { success: true };
     } catch (err: any) {
       console.error('Google Sheet sync error:', err);
       setLiveSyncStatus('error');
@@ -387,7 +411,7 @@ export default function App() {
         });
         setTimeout(() => setPdfToast(null), 6000);
       }
-      return false;
+      return { success: false, error: errMsg };
     }
   };
 
@@ -419,8 +443,8 @@ export default function App() {
 
   // Save config and connect
   const handleSaveAndConnectLiveSync = async (url: string, interval: LiveSyncIntervalSeconds): Promise<boolean> => {
-    const success = await performLiveSync(url, true, false);
-    if (success) {
+    const res = await performLiveSync(url, true, false);
+    if (res.success) {
       const newConfig: LiveSyncConfig = {
         ...liveSyncConfig,
         sheetUrl: url,
@@ -432,8 +456,9 @@ export default function App() {
       saveStoredLiveSyncConfig(newConfig);
       setNextSyncCountdown(interval);
       setIsLiveSyncModalOpen(false);
+      return true;
     }
-    return success;
+    throw new Error(res.error || 'Failed to connect to Google Sheet.');
   };
 
   // Pause / Resume toggle
@@ -556,14 +581,12 @@ export default function App() {
             {/* 2. Filter Bar */}
             <FilterBar
               filter={filters}
-              onFilterChange={setFilters}
+              onFilterChange={handleFilterChange}
               onResetFilters={handleResetFilters}
               platforms={availablePlatforms}
               categories={availableCategories}
               products={availableProducts}
               years={availableYears}
-              sheets={availableSheets}
-              sheetsSummary={sheetsSummary}
               totalRecords={currentDataset.length}
               filteredCount={filteredRecords.length}
             />

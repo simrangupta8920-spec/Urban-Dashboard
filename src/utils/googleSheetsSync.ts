@@ -18,7 +18,7 @@ export interface ParsedSheetInfo {
  * Validates and extracts details from a user-supplied Google Sheet or CSV URL
  */
 export function parseGoogleSheetUrl(rawInput: string): ParsedSheetInfo {
-  const trimmed = (rawInput || '').trim();
+  const trimmed = (rawInput || '').trim().replace(/^[<"']+|[>"']+$/g, '');
 
   if (!trimmed) {
     return {
@@ -55,18 +55,19 @@ export function parseGoogleSheetUrl(rawInput: string): ParsedSheetInfo {
     trimmed.includes('/api/user-sheet') ||
     trimmed.includes('user-sheet')
   ) {
+    const cleanUrl = trimmed === 'sample' ? '/api/sample-live-sheet' : (trimmed.startsWith('/') ? trimmed : `/${trimmed}`);
     return {
       isValid: true,
       type: 'sample_sheet',
-      cleanUrl: '/api/sample-live-sheet',
-      displayTitle: 'Urban Organic Live Stream (Blinkit & Amazon)',
+      cleanUrl,
+      displayTitle: 'Urban Organic Live Stream (Multi-Month)',
       sheetId: 'sample-stream',
       gid: '0',
     };
   }
 
   // Check standard Google Sheet: https://docs.google.com/spreadsheets/d/{ID}/...
-  const sheetMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]{15,})/);
+  const sheetMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]{10,})/);
   if (sheetMatch) {
     const sheetId = sheetMatch[1];
     const gidMatch = trimmed.match(/[?&#]gid=([0-9]+)/);
@@ -83,7 +84,7 @@ export function parseGoogleSheetUrl(rawInput: string): ParsedSheetInfo {
   }
 
   // Check published web link: https://docs.google.com/spreadsheets/d/e/{PUB_ID}/...
-  const pubMatch = trimmed.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]{20,})/);
+  const pubMatch = trimmed.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]{10,})/);
   if (pubMatch) {
     const pubId = pubMatch[1];
     const gidMatch = trimmed.match(/[?&#]gid=([0-9]+)/);
@@ -101,13 +102,11 @@ export function parseGoogleSheetUrl(rawInput: string): ParsedSheetInfo {
 
   // Check direct CSV or file URL
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    const isCsvOrTsv = trimmed.includes('.csv') || trimmed.includes('format=csv') || trimmed.includes('output=csv');
     return {
-      isValid: isCsvOrTsv,
+      isValid: true,
       type: 'direct_csv',
       cleanUrl: trimmed,
-      displayTitle: 'Direct Web CSV / Spreadsheet Data Source',
-      error: isCsvOrTsv ? undefined : 'URL does not look like a Google Sheet or CSV data stream.',
+      displayTitle: 'Direct Web Spreadsheet Data Stream',
     };
   }
 

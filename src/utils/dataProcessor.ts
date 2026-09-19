@@ -21,10 +21,15 @@ import { parseCleanNumber } from './formatters';
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
- * Standardizes any date input (string, Date, or Excel serial number) to YYYY-MM-DD
- * Preserves the exact intended calendar date without timezone skew (e.g. 1st of month remaining 1st).
+ * Standardizes any date input (string, Date, or Excel serial number) to YYYY-MM-DD.
+ * When expectedMonthYear is provided (e.g. from a sheet named 'Aug 2026' or 'August'),
+ * date ambiguity is resolved in favor of the expected month, guaranteeing that
+ * August sales records are never erroneously mapped to July or January.
  */
-export function normalizeDate(val: unknown): { iso: string; year: number; month: number; monthName: string; monthYear: string; timestamp: number } | null {
+export function normalizeDate(
+  val: unknown,
+  expectedMonthYear?: { month: number; year: number } | null
+): { iso: string; year: number; month: number; monthName: string; monthYear: string; timestamp: number } | null {
   if (val === undefined || val === null || val === '') return null;
 
   let year = -1;
@@ -33,57 +38,118 @@ export function normalizeDate(val: unknown): { iso: string; year: number; month:
 
   // 1. If already a JS Date object (e.g. from XLSX cellDates: true)
   if (val instanceof Date && !isNaN(val.getTime())) {
-    // If constructed at local midnight (like XLSX does with new Date(y, m-1, d)):
-    if (val.getHours() === 0 && val.getMinutes() === 0 && val.getSeconds() === 0) {
-      year = val.getFullYear();
-      month = val.getMonth();
-      day = val.getDate();
-    }
-    // If constructed at UTC midnight (like new Date("2026-09-01T00:00:00Z")):
-    else if (val.getUTCHours() === 0 && val.getUTCMinutes() === 0 && val.getUTCSeconds() === 0) {
-      year = val.getUTCFullYear();
-      month = val.getUTCMonth();
-      day = val.getUTCDate();
-    }
-    // General fallback: prefer local calendar components
-    else {
-      year = val.getFullYear();
-      month = val.getMonth();
-      day = val.getDate();
+    const utcYr = val.getUTCFullYear();
+    const utcMo = val.getUTCMonth();
+    const utcDay = val.getUTCDate();
+    const locYr = val.getFullYear();
+    const locMo = val.getMonth();
+    const locDay = val.getDate();
+
+    if (expectedMonthYear) {
+      if (utcMo === expectedMonthYear.month) {
+        year = utcYr;
+        month = utcMo;
+        day = utcDay;
+      } else if (locMo === expectedMonthYear.month) {
+        year = locYr;
+        month = locMo;
+        day = locDay;
+      } else {
+        // Enforce month and year of the sheet context
+        year = expectedMonthYear.year;
+        month = expectedMonthYear.month;
+        day = Math.min(31, Math.max(1, utcDay || locDay || 1));
+      }
+    } else {
+      // If UTC midnight (standard in XLSX cellDates and Google Sheets)
+      if (val.getUTCHours() === 0 && val.getUTCMinutes() === 0 && val.getUTCSeconds() === 0) {
+        year = utcYr;
+        month = utcMo;
+        day = utcDay;
+      } else if (val.getHours() === 0 && val.getMinutes() === 0 && val.getSeconds() === 0) {
+        year = locYr;
+        month = locMo;
+        day = locDay;
+      } else {
+        // Choose the component that is closer to calendar midnight
+        const utcDiff = Math.abs(val.getUTCHours() * 60 + val.getUTCMinutes());
+        const locDiff = Math.abs(val.getHours() * 60 + val.getMinutes());
+        if (utcDiff <= locDiff) {
+          year = utcYr;
+          month = utcMo;
+          day = utcDay;
+        } else {
+          year = locYr;
+          month = locMo;
+          day = locDay;
+        }
+      }
     }
   }
   // 2. Excel serial number (e.g., 46266 or 46266.0001)
   else if (typeof val === 'number') {
-    const totalDays = Math.round(val);
-    const ms = Date.UTC(1899, 11, 30) + totalDays * 86400000;
-    const d = new Date(ms);
-    year = d.getUTCFullYear();
-    month = d.getUTCMonth();
-    day = d.getUTCDate();
+    if (expectedMonthYear && Number.isInteger(val) && val >= 1 && val <= 31) {
+      year = expectedMonthYear.year;
+      month = expectedMonthYear.month;
+      day = val;
+    } else {
+      const totalDays = Math.round(val);
+      const ms = Date.UTC(1899, 11, 30) + totalDays * 86400000;
+      const d = new Date(ms);
+      year = d.getUTCFullYear();
+      month = d.getUTCMonth();
+      day = d.getUTCDate();
+
+      // Guard against timezone off-by-one month rollover
+      if (expectedMonthYear && month !== expectedMonthYear.month) {
+        if (month === expectedMonthYear.month - 1 && day >= 30) {
+          month = expectedMonthYear.month;
+          day = 1;
+        } else {
+          month = expectedMonthYear.month;
+          year = expectedMonthYear.year;
+        }
+      }
+    }
   }
   // 3. String parsing
   else if (typeof val === 'string') {
     const trimmed = val.trim();
     if (!trimmed) return null;
 
-    // Pattern A: DD-MMM-YYYY or DD-MMM-YY (e.g. 01-Sep-26, 1-Sep-2026, 01-Sep-2026)
-    const dMonYMatch = trimmed.match(/^(\d{1,2})[-/ ]([A-Za-z]{3,9})[-/ ](\d{2,4})$/i);
-    if (dMonYMatch) {
-      const dNum = parseInt(dMonYMatch[1], 10);
-      const monStr = dMonYMatch[2].slice(0, 3).toLowerCase();
-      let yr = parseInt(dMonYMatch[3], 10);
-      if (yr < 100) yr += 2000;
-      const monthIdx = MONTH_NAMES.findIndex(m => m.toLowerCase() === monStr);
-      if (monthIdx !== -1) {
-        year = yr;
-        month = monthIdx;
-        day = dNum;
+    // Pattern 1: Day-only notation in a known sheet (e.g. '1', '2', '31', 'Day 15', '1st')
+    if (expectedMonthYear) {
+      const dayOnly = trimmed.match(/^(?:day\s+)?(\d{1,2})(?:st|nd|rd|th)?$/i);
+      if (dayOnly) {
+        const dNum = parseInt(dayOnly[1], 10);
+        if (dNum >= 1 && dNum <= 31) {
+          day = dNum;
+          month = expectedMonthYear.month;
+          year = expectedMonthYear.year;
+        }
       }
     }
 
-    // Pattern B: YYYY-MM-DD or YYYY/MM/DD (ISO standard, e.g. 2026-09-01)
+    // Pattern 2: DD-MMM-YYYY or DD-MMM-YY (e.g. 01-Aug-26, 1-Aug-2024, 01-Sep-2026)
     if (year === -1) {
-      const isoMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+      const dMonYMatch = trimmed.match(/^(\d{1,2})[-/ ]([A-Za-z]{3,9})[-/ ](\d{2,4})$/i);
+      if (dMonYMatch) {
+        const dNum = parseInt(dMonYMatch[1], 10);
+        const monStr = dMonYMatch[2].slice(0, 3).toLowerCase();
+        let yr = parseInt(dMonYMatch[3], 10);
+        if (yr < 100) yr += 2000;
+        const monthIdx = MONTH_NAMES.findIndex(m => m.toLowerCase() === monStr);
+        if (monthIdx !== -1) {
+          year = yr;
+          month = monthIdx;
+          day = dNum;
+        }
+      }
+    }
+
+    // Pattern 3: ISO YYYY-MM-DD (with optional time component, e.g. 2026-08-01 10:30:00)
+    if (year === -1) {
+      const isoMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+.*)?$/);
       if (isoMatch) {
         year = parseInt(isoMatch[1], 10);
         month = parseInt(isoMatch[2], 10) - 1;
@@ -91,15 +157,62 @@ export function normalizeDate(val: unknown): { iso: string; year: number; month:
       }
     }
 
-    // Pattern C: MMM-DD-YYYY or MMM DD, YYYY (e.g. Sep 1, 2026, September 01, 2026)
+    // Pattern 4: Numeric separator format (DD/MM/YYYY, MM/DD/YYYY, D-M-Y)
     if (year === -1) {
-      const monDYMatch = trimmed.match(/^([A-Za-z]{3,9})[-/ ](\d{1,2})(?:st|nd|rd|th)?,?[-/ ](\d{2,4})$/i);
+      const numMatch = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:\s+.*)?$/);
+      if (numMatch) {
+        const p1 = parseInt(numMatch[1], 10);
+        const p2 = parseInt(numMatch[2], 10);
+        let yr = parseInt(numMatch[3], 10);
+        if (yr < 100) yr += 2000;
+
+        if (expectedMonthYear) {
+          const expM1 = expectedMonthYear.month + 1; // 1-based expected month
+          if (p2 === expM1 && p1 >= 1 && p1 <= 31) {
+            // DD/MM/YYYY where MM matches expected month (e.g. 01/08/2024, 07/08/2024)
+            day = p1;
+            month = expectedMonthYear.month;
+            year = yr || expectedMonthYear.year;
+          } else if (p1 === expM1 && p2 >= 1 && p2 <= 31) {
+            // MM/DD/YYYY where MM matches expected month (e.g. 8/1/2024, 8/7/2024)
+            day = p2;
+            month = expectedMonthYear.month;
+            year = yr || expectedMonthYear.year;
+          } else if (p1 >= 1 && p1 <= 31) {
+            // Safe fallback inside a month sheet: use day number in expected month
+            day = p1;
+            month = expectedMonthYear.month;
+            year = yr || expectedMonthYear.year;
+          }
+        } else {
+          // No expected month: standard international/Indian format DD/MM/YYYY
+          if (p1 > 12 && p2 <= 12) {
+            day = p1;
+            month = p2 - 1;
+            year = yr;
+          } else if (p2 > 12 && p1 <= 12) {
+            month = p1 - 1;
+            day = p2;
+            year = yr;
+          } else {
+            // Default to DD/MM/YYYY (e.g. 01/08/2024 is 1st Aug, not Jan 8th)
+            day = p1;
+            month = p2 - 1;
+            year = yr;
+          }
+        }
+      }
+    }
+
+    // Pattern 5: MMM-DD-YYYY or MMM DD, YYYY (e.g. Sep 1, 2026, August 01, 2024)
+    if (year === -1) {
+      const monDYMatch = trimmed.match(/^([A-Za-z]{3,9})[-/ ](\d{1,2})(?:st|nd|rd|th)?,?[-/ ]?(\d{2,4})?$/i);
       if (monDYMatch) {
         const monStr = monDYMatch[1].slice(0, 3).toLowerCase();
         const monthIdx = MONTH_NAMES.findIndex(m => m.toLowerCase() === monStr);
         if (monthIdx !== -1) {
           day = parseInt(monDYMatch[2], 10);
-          let yr = parseInt(monDYMatch[3], 10);
+          let yr = monDYMatch[3] ? parseInt(monDYMatch[3], 10) : (expectedMonthYear?.year || 2026);
           if (yr < 100) yr += 2000;
           year = yr;
           month = monthIdx;
@@ -107,35 +220,39 @@ export function normalizeDate(val: unknown): { iso: string; year: number; month:
       }
     }
 
-    // Pattern D: DD/MM/YYYY or DD-MM-YYYY (e.g. 01/09/2026, 01-09-2026)
-    if (year === -1) {
-      const ddmmyyyyMatch = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
-      if (ddmmyyyyMatch) {
-        day = parseInt(ddmmyyyyMatch[1], 10);
-        month = parseInt(ddmmyyyyMatch[2], 10) - 1;
-        year = parseInt(ddmmyyyyMatch[3], 10);
-      }
-    }
-
     // Fallback JS Date parsing for other string formats
     if (year === -1) {
       const parsed = new Date(trimmed);
       if (!isNaN(parsed.getTime())) {
-        if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0) {
-          year = parsed.getFullYear();
-          month = parsed.getMonth();
-          day = parsed.getDate();
-        } else if (parsed.getUTCHours() === 0 && parsed.getUTCMinutes() === 0 && parsed.getUTCSeconds() === 0) {
+        if (expectedMonthYear) {
+          const utcU = parsed.getUTCMonth();
+          const locU = parsed.getMonth();
+          if (utcU === expectedMonthYear.month) {
+            year = parsed.getUTCFullYear();
+            month = utcU;
+            day = parsed.getUTCDate();
+          } else if (locU === expectedMonthYear.month) {
+            year = parsed.getFullYear();
+            month = locU;
+            day = parsed.getDate();
+          } else {
+            year = expectedMonthYear.year;
+            month = expectedMonthYear.month;
+            day = Math.min(31, Math.max(1, parsed.getUTCDate()));
+          }
+        } else {
           year = parsed.getUTCFullYear();
           month = parsed.getUTCMonth();
           day = parsed.getUTCDate();
-        } else {
-          year = parsed.getFullYear();
-          month = parsed.getMonth();
-          day = parsed.getDate();
         }
       }
     }
+  }
+
+  // Enforce expected month when sheet context exists
+  if (expectedMonthYear && month !== -1 && month !== expectedMonthYear.month) {
+    month = expectedMonthYear.month;
+    year = expectedMonthYear.year;
   }
 
   if (year === -1 || month === -1 || day === -1 || month < 0 || month > 11 || day < 1 || day > 31) {
@@ -513,7 +630,7 @@ export async function parseUploadedFile(
       let dateInfo: { iso: string; year: number; month: number; monthName: string; monthYear: string; timestamp: number } | null = null;
 
       if (rawDate) {
-        dateInfo = normalizeDate(rawDate);
+        dateInfo = normalizeDate(rawDate, sheetMonthYear);
       }
 
       // If rawDate was only a day number (like 1, 2, 3.. 31) and sheetMonthYear is known
@@ -561,6 +678,17 @@ export async function parseUploadedFile(
             timestamp: d.getTime(),
           };
         }
+      }
+
+      // If sheet tab is dedicated to a month, strictly enforce that all records from this sheet belong to that month
+      if (sheetMonthYear && dateInfo && dateInfo.month !== sheetMonthYear.month) {
+        dateInfo.month = sheetMonthYear.month;
+        dateInfo.monthName = sheetMonthYear.monthName;
+        dateInfo.year = sheetMonthYear.year;
+        dateInfo.monthYear = `${sheetMonthYear.monthName} ${sheetMonthYear.year}`;
+        const day = Math.min(31, Math.max(1, parseInt(dateInfo.iso.split('-')[2] || '1', 10)));
+        dateInfo.iso = `${sheetMonthYear.year}-${String(sheetMonthYear.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        dateInfo.timestamp = Date.UTC(sheetMonthYear.year, sheetMonthYear.month, day);
       }
 
       const productName = String(rawProduct || 'Organic Superfood Item').trim() || 'Organic Superfood Item';
@@ -712,15 +840,16 @@ export function calculateKpiMetrics(
   let prevPeriodLabel = 'prior period';
 
   // Case 1: Specific Month selected
-  if (filter.month !== 'ALL' && filter.year !== 'ALL') {
-    const curYear = parseInt(filter.year, 10);
+  if (filter.month !== 'ALL') {
     const curMonth = parseInt(filter.month, 10);
     const prevMonth = curMonth === 0 ? 11 : curMonth - 1;
-    const prevYear = curMonth === 0 ? curYear - 1 : curYear;
+    const activeYear = filter.year !== 'ALL' ? parseInt(filter.year, 10) : (filteredRecords[0]?.year || 2026);
+    const prevYear = curMonth === 0 ? activeYear - 1 : activeYear;
     prevPeriodLabel = `${MONTH_NAMES[prevMonth]} ${prevYear}`;
 
     const prevRecords = allRecords.filter(r => {
-      if (r.year !== prevYear || r.month !== prevMonth) return false;
+      if (r.month !== prevMonth) return false;
+      if (filter.year !== 'ALL' && r.year !== prevYear) return false;
       if (filter.platform !== 'ALL' && r.platform.toLowerCase() !== filter.platform.toLowerCase()) return false;
       if (filter.category !== 'ALL' && r.category.toLowerCase() !== filter.category.toLowerCase()) return false;
       if (filter.product !== 'ALL' && r.productName.toLowerCase() !== filter.product.toLowerCase()) return false;
@@ -831,17 +960,16 @@ export function buildSalesGrowthTimeSeries(
       label = `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
       sortKey = r.timestamp;
     } else if (granularity === 'weekly') {
-      // Find week start date (Sunday or Monday)
+      // Clean week-of-month grouping aligned with the calendar month
       const d = new Date(r.timestamp);
-      const day = d.getUTCDay();
-      const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
-      const monday = new Date(d.setUTCDate(diff));
-      const year = monday.getUTCFullYear();
-      const month = monday.getUTCMonth();
-      const dateNum = monday.getUTCDate();
-      key = `${year}-W${Math.ceil(dateNum / 7)}-${month}`;
-      label = `Wk of ${dateNum} ${MONTH_NAMES[month]}`;
-      sortKey = monday.getTime();
+      const dayNum = d.getUTCDate();
+      const weekIndex = Math.ceil(dayNum / 7);
+      const weekStart = (weekIndex - 1) * 7 + 1;
+      const lastDayOfMonth = new Date(Date.UTC(r.year, r.month + 1, 0)).getUTCDate();
+      const weekEnd = Math.min(weekStart + 6, lastDayOfMonth);
+      key = `${r.year}-${String(r.month + 1).padStart(2, '0')}-W${weekIndex}`;
+      label = `${MONTH_NAMES[r.month]} ${weekStart}–${weekEnd}`;
+      sortKey = Date.UTC(r.year, r.month, weekStart);
     } else {
       // Monthly
       key = `${r.year}-${String(r.month + 1).padStart(2, '0')}`;

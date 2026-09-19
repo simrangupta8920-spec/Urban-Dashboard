@@ -1,6 +1,6 @@
 import React from 'react';
 import { FilterState, SheetSummary } from '../types';
-import { RotateCcw, Filter, Calendar, ShoppingBag, Grid, Tag, ChevronDown, X, Layers, FileSpreadsheet } from 'lucide-react';
+import { RotateCcw, Filter, Calendar, ShoppingBag, Grid, Tag, ChevronDown, X, Layers } from 'lucide-react';
 
 interface FilterBarProps {
   filter: FilterState;
@@ -40,8 +40,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   categories,
   products,
   years,
-  sheets,
-  sheetsSummary,
   totalRecords,
   filteredCount,
 }) => {
@@ -51,12 +49,31 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     filter.product !== 'ALL' ||
     filter.month !== 'ALL' ||
     filter.year !== 'ALL' ||
-    (filter.sheet && filter.sheet !== 'ALL') ||
     !!filter.startDate ||
     !!filter.endDate;
 
   const handleFieldChange = (key: keyof FilterState, val: string) => {
-    // If user changes category, also reset product if the current product does not belong to that category
+    // When a specific month is chosen, reset custom date range bounds so the selected month displays fully
+    if (key === 'month' && val !== 'ALL') {
+      onFilterChange({
+        ...filter,
+        month: val,
+        startDate: '',
+        endDate: '',
+      });
+      return;
+    }
+
+    // If setting custom date range bounds, reset month filter to avoid conflicting constraints
+    if ((key === 'startDate' || key === 'endDate') && val) {
+      onFilterChange({
+        ...filter,
+        [key]: val,
+        month: 'ALL',
+      });
+      return;
+    }
+
     onFilterChange({
       ...filter,
       [key]: val,
@@ -186,56 +203,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
-        {/* Multi-Month Workbook Tabs Bar (if 2 or more sheet tabs detected) */}
-        {sheets && sheets.length > 1 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-[#F3F9F4] border border-[#CCE5D3] text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-[#E2F0E5] text-[#1B4324] flex items-center justify-center shrink-0">
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-              </div>
-              <span className="font-bold text-[#18261B] text-xs">
-                Workbook Sheets ({sheets.length} Months):
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleFieldChange('sheet', 'ALL')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  !filter.sheet || filter.sheet === 'ALL'
-                    ? 'bg-[#1B4324] text-white shadow-xs'
-                    : 'bg-white text-[#3E5242] hover:text-[#18261B] border border-[#CFE4D4]'
-                }`}
-              >
-                All Sheets ({totalRecords.toLocaleString()} rows)
-              </button>
-
-              {sheets.map(sheetName => {
-                const summary = sheetsSummary?.find(s => s.sheetName === sheetName);
-                const isSelected = filter.sheet === sheetName;
-                return (
-                  <button
-                    key={sheetName}
-                    type="button"
-                    onClick={() => handleFieldChange('sheet', sheetName)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#1B4324] text-white shadow-xs'
-                        : 'bg-white text-[#3E5242] hover:text-[#18261B] border border-[#CFE4D4]'
-                    }`}
-                  >
-                    {sheetName}
-                    {summary ? ` (${summary.validCount})` : ''}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Filter Inputs Grid: Date Range, Platform, Category, Product, Month, Year, Sheet */}
-        <div className={`grid grid-cols-1 sm:grid-cols-2 ${sheets && sheets.length > 1 ? 'lg:grid-cols-7' : 'lg:grid-cols-6'} gap-3`}>
+        {/* Filter Inputs Grid: Date Range, Platform, Category, Product, Month, Year */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           
           {/* 1. Date Range: Start / End */}
           <div className="space-y-1">
@@ -370,47 +339,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </div>
           </div>
 
-          {/* 7. Sheet Tab (if multi-sheet workbook) */}
-          {sheets && sheets.length > 1 && (
-            <div className="space-y-1">
-              <label className="block text-[11px] font-semibold text-[#1B4324] uppercase tracking-wider flex items-center gap-1">
-                <FileSpreadsheet className="w-3 h-3 text-[#1B4324]" />
-                Sheet Tab
-              </label>
-              <div className="relative">
-                <select
-                  value={filter.sheet || 'ALL'}
-                  onChange={e => handleFieldChange('sheet', e.target.value)}
-                  className="w-full text-xs font-medium bg-[#F2F8F3] hover:bg-white border border-[#B8D8C0] rounded-lg px-2.5 py-1.5 pr-7 text-[#18261B] appearance-none focus:outline-hidden focus:border-[#234E33]"
-                >
-                  <option value="ALL">All Sheets ({sheets.length})</option>
-                  {sheets.map(sh => (
-                    <option key={sh} value={sh}>
-                      {sh}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-[#5A7B62] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-            </div>
-          )}
-
         </div>
 
         {/* Active Filter Chips */}
         {isFiltered && (
           <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[#F5F2EB]">
             <span className="text-[11px] text-[#7A8C7D] mr-1">Active Filters:</span>
-
-            {filter.sheet && filter.sheet !== 'ALL' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EAF3EC] border border-[#A5D4B2] text-[11px] text-[#1B4324] font-semibold">
-                <FileSpreadsheet className="w-3 h-3 text-[#1B4324]" />
-                Sheet: {filter.sheet}
-                <button type="button" onClick={() => handleFieldChange('sheet', 'ALL')}>
-                  <X className="w-3 h-3 text-[#5A7B62] hover:text-[#1B4324]" />
-                </button>
-              </span>
-            )}
             
             {filter.platform !== 'ALL' && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EBF3EC] border border-[#CFE4D4] text-[11px] text-[#1B4324] font-medium">
