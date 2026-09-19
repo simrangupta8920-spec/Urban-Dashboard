@@ -45,7 +45,7 @@ export function formatQuantity(num: number): string {
  * e.g. 28.4 -> "+28.4%", -5.1 -> "-5.1%"
  */
 export function formatGrowth(pct: number | null | undefined): string {
-  if (pct === null || pct === undefined || isNaN(pct)) return '—';
+  if (pct === null || pct === undefined || isNaN(pct)) return '0.0%';
   const sign = pct > 0 ? '+' : '';
   return `${sign}${pct.toFixed(1)}%`;
 }
@@ -53,8 +53,8 @@ export function formatGrowth(pct: number | null | undefined): string {
 /**
  * Formats percentage e.g. 42.1%
  */
-export function formatPercentage(pct: number): string {
-  if (isNaN(pct)) return '0%';
+export function formatPercentage(pct: number | null | undefined): string {
+  if (pct === null || pct === undefined || isNaN(pct)) return '0%';
   return `${pct.toFixed(1)}%`;
 }
 

@@ -113,14 +113,12 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ metrics }) => {
             {isGrowthPositive && <ArrowUpRight className="w-3.5 h-3.5 text-[#1B4324]" />}
             {isGrowthNegative && <ArrowDownRight className="w-3.5 h-3.5 text-rose-700" />}
             <span className="text-[#6C7D6F] text-[11px] truncate">
-              vs {prevPeriodLabel}
+              vs {prevPeriodLabel || 'prior period'}
             </span>
           </div>
-          {prevPeriodSales > 0 && (
-            <span className="text-[11px] text-[#6C7D6F] font-medium">
-              Prior: {formatLakhs(prevPeriodSales, true)}
-            </span>
-          )}
+          <span className="text-[11px] text-[#6C7D6F] font-medium">
+            Prior: {formatLakhs(prevPeriodSales || 0, true)}
+          </span>
         </div>
       </div>
 
@@ -132,7 +130,7 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ metrics }) => {
               Top Platform
             </span>
             <div className="font-display font-extrabold text-2xl sm:text-3xl text-[#18261B] mt-1.5 tracking-tight truncate">
-              {topPlatform ? topPlatform.name : '—'}
+              {topPlatform ? topPlatform.name : '0 (None)'}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-[#FDF0E9] text-[#A25D34] flex items-center justify-center shrink-0 border border-[#F5DACD]">
@@ -151,7 +149,14 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ metrics }) => {
               </span>
             </>
           ) : (
-            <span className="text-[#88988A] text-[11px]">No platform data</span>
+            <>
+              <span className="text-[#6C7D6F]">
+                Contribution: <strong className="text-[#18261B] font-semibold">0%</strong>
+              </span>
+              <span className="text-[11px] text-[#6C7D6F] font-semibold bg-[#F4F2EC] px-2 py-0.5 rounded-full">
+                ₹ 0
+              </span>
+            </>
           )}
         </div>
       </div>

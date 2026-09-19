@@ -22,6 +22,10 @@ export const PlatformGrowthChart: React.FC<PlatformGrowthChartProps> = ({
   data,
   platforms,
 }) => {
+  if (platforms.length === 0) {
+    return null;
+  }
+
   // State for toggling platforms on/off in the chart
   const [hiddenPlatforms, setHiddenPlatforms] = useState<Record<string, boolean>>({});
 

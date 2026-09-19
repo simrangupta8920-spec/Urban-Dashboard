@@ -39,6 +39,12 @@ import {
 import { Header } from './components/Header';
 import { EmptyState } from './components/EmptyState';
 import { FilterBar } from './components/FilterBar';
+import { ExecutiveTopControlBar } from './components/ExecutiveTopControlBar';
+import { ExecutiveRevenueTrend } from './components/ExecutiveRevenueTrend';
+import { ExecutiveStackedKpis } from './components/ExecutiveStackedKpis';
+import { ExecutiveRevenueByPlatform } from './components/ExecutiveRevenueByPlatform';
+import { ExecutiveTopPlatform } from './components/ExecutiveTopPlatform';
+import { MarketplacesGrid } from './components/MarketplacesGrid';
 import { KpiCards } from './components/KpiCards';
 import { SalesGrowthHeroChart } from './components/SalesGrowthHeroChart';
 import { SalesByPlatform } from './components/SalesByPlatform';
@@ -62,13 +68,15 @@ const INITIAL_FILTER: FilterState = {
 };
 
 export default function App() {
-  // Data source mode: 'demo' or 'user'
-  const [dataSourceMode, setDataSourceMode] = useState<'demo' | 'user'>('demo');
+  // Data source mode: 'user' by default - no pre-fitted data
+  const [dataSourceMode, setDataSourceMode] = useState<'demo' | 'user'>('user');
 
-  // Pre-seeded demo dataset
-  const demoDataset = useMemo(() => generateFullSampleDataset(), []);
+  // Pre-seeded demo dataset generated only if user explicitly clicks preview
+  const demoDataset = useMemo(() => {
+    return dataSourceMode === 'demo' ? generateFullSampleDataset() : [];
+  }, [dataSourceMode]);
 
-  // User uploaded dataset
+  // User uploaded dataset - starts strictly empty with 0 records
   const [userDataset, setUserDataset] = useState<CleanSalesRecord[]>([]);
   const [userRawBuffer, setUserRawBuffer] = useState<ArrayBuffer | null>(null);
   const [detectedColumns, setDetectedColumns] = useState<string[]>([]);
@@ -88,6 +96,7 @@ export default function App() {
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
   const [pdfToast, setPdfToast] = useState<{ message: string; type: 'info' | 'success' | 'error' } | null>(null);
+  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState<boolean>(false);
 
   // Live Sync State
   const [liveSyncConfig, setLiveSyncConfig] = useState<LiveSyncConfig>(() => {
@@ -301,6 +310,17 @@ export default function App() {
     }));
   };
 
+  // Clear all loaded data back to 0
+  const handleClearData = () => {
+    setUserDataset([]);
+    setUserRawBuffer(null);
+    setDataSourceMode('user');
+    setUploadError(null);
+    setFilters(INITIAL_FILTER);
+    setPdfToast({ message: 'Dashboard cleared. All sales metrics reset to 0.', type: 'info' });
+    setTimeout(() => setPdfToast(null), 3500);
+  };
+
   // Handler for Export to PDF
   const handleExportPDF = async () => {
     if (!dashboardRef.current) return;
@@ -507,6 +527,7 @@ export default function App() {
         liveSyncStatus={liveSyncStatus}
         liveSyncInterval={liveSyncConfig.intervalSeconds}
         onOpenLiveSyncModal={() => setIsLiveSyncModalOpen(true)}
+        onClearData={handleClearData}
       />
 
       {/* Main Content Area */}
@@ -569,16 +590,74 @@ export default function App() {
           </div>
         )}
 
-        {showEmptyState ? (
-          <EmptyState
-            onFileUpload={handleFileUpload}
-            onSwitchToDemo={() => setDataSourceMode('demo')}
-            onOpenLiveSync={() => setIsLiveSyncModalOpen(true)}
-            error={uploadError}
-          />
+        {/* 1. Ingestion Hero Card when dataset is empty (All Data is 0) */}
+        {currentDataset.length === 0 ? (
+          <div className="mb-8">
+            <EmptyState
+              onFileUpload={handleFileUpload}
+              onSwitchToDemo={() => setDataSourceMode('demo')}
+              onOpenLiveSync={() => setIsLiveSyncModalOpen(true)}
+              error={uploadError}
+            />
+          </div>
         ) : (
-          <>
-            {/* 2. Filter Bar */}
+          /* Active Dataset Notification Banner */
+          <div className="mb-6 px-4 py-3 rounded-2xl bg-white border border-[#C5DDCB] shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#234E33]"></span>
+              <span className="font-bold text-[#18261B]">
+                {dataSourceMode === 'demo' ? 'Sample Demo Dataset' : 'Active Dataset Loaded'}
+              </span>
+              <span className="text-[#A5B8A8]">•</span>
+              <span className="text-[#556958]">
+                {currentDataset.length.toLocaleString()} sales transactions across {availablePlatforms.length} platform{availablePlatforms.length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.xlsx, .xls, .csv';
+                  input.onchange = (e: any) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleFileUpload(e.target.files[0]);
+                    }
+                  };
+                  input.click();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#EAF3EC] hover:bg-[#D9EBDC] border border-[#B5DBC0] text-xs font-semibold text-[#1B4324] transition-all cursor-pointer"
+              >
+                Upload New File
+              </button>
+              <button
+                type="button"
+                onClick={handleClearData}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 transition-all cursor-pointer"
+              >
+                Reset to 0
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2. Executive Top Control Bar matching Image 1 */}
+        <ExecutiveTopControlBar
+          filter={filters}
+          onFilterChange={handleFilterChange}
+          onResetFilters={handleResetFilters}
+          platforms={availablePlatforms}
+          totalRecords={currentDataset.length}
+          filteredCount={filteredRecords.length}
+          isAdvancedOpen={isAdvancedFiltersOpen}
+          onToggleAdvanced={() => setIsAdvancedFiltersOpen(prev => !prev)}
+        />
+
+        {/* Expandable Advanced Filters (Categories, Products, Custom Date Range) */}
+        {isAdvancedFiltersOpen && (
+          <div className="mb-6 animate-in fade-in-50 duration-150">
             <FilterBar
               filter={filters}
               onFilterChange={handleFilterChange}
@@ -590,67 +669,89 @@ export default function App() {
               totalRecords={currentDataset.length}
               filteredCount={filteredRecords.length}
             />
+          </div>
+        )}
 
-            {/* SECTION 1: HERO & KPIS */}
-            <div id="pdf-section-hero" className="space-y-8 mb-8">
-              {/* 3. 4 KPI Cards */}
-              <KpiCards metrics={kpiMetrics} />
-
-              {/* 4. Large Sales Growth Hero Chart */}
-              <SalesGrowthHeroChart
-                data={salesTimeSeries}
-                granularity={granularity}
-                onGranularityChange={setGranularity}
+        {/* SECTION 1: TOP ROW (2:1 Split) - Revenue Trend (Left) + Stacked KPIs (Right) */}
+        <div id="pdf-section-hero" className="mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-stretch">
+            {/* Left 2/3 (col-span-12 lg:col-span-8): Multi-Platform Revenue Trend */}
+            <div className="lg:col-span-8">
+              <ExecutiveRevenueTrend
+                data={platformTimeSeries}
+                platforms={availablePlatforms}
+                selectedPlatform={filters.platform}
+                onSelectPlatform={handleSelectPlatform}
               />
             </div>
 
-            {/* SECTION 2: PLATFORM PERFORMANCE & GROWTH */}
-            <div id="pdf-section-platforms" className="space-y-8 mb-8">
-              {/* 5. Sales by Platform (Donut + Bar) & Platform Growth (Multi-line) */}
-              <SalesByPlatform
+            {/* Right 1/3 (col-span-12 lg:col-span-4): Stacked KPI Cards */}
+            <div className="lg:col-span-4">
+              <ExecutiveStackedKpis metrics={kpiMetrics} />
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 2: BOTTOM ROW (2:1 Split) - Revenue by Platform (Left) + Top Platform Ranking (Right) */}
+        <div id="pdf-section-platforms" className="mb-6 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-stretch">
+            {/* Left 2/3 (col-span-12 lg:col-span-8): Revenue by Platform (Donut + Progress bars) */}
+            <div className="lg:col-span-8">
+              <ExecutiveRevenueByPlatform
                 platforms={platformMetrics}
                 selectedPlatform={filters.platform}
                 onSelectPlatform={handleSelectPlatform}
               />
-
-              <PlatformGrowthChart
-                data={platformTimeSeries}
-                platforms={availablePlatforms}
-              />
             </div>
 
-            {/* SECTION 3: MONTHLY COMPARISON & PRODUCT CATALOG */}
-            <div id="pdf-section-products" className="space-y-8 mb-8">
-              {/* 6. Monthly Sales Comparison (e.g. 2025 vs 2026) */}
-              <MonthlySalesComparison
-                data={monthlyComparison.data}
-                years={monthlyComparison.years}
-              />
-
-              {/* 7. Sales by Category + Top Selling Products Table */}
-              <CategoryAndProductSection
-                categories={categoryMetrics}
-                products={productMetrics}
-                selectedCategory={filters.category}
-                selectedProduct={filters.product}
-                onSelectCategory={handleSelectCategory}
-                onSelectProduct={handleSelectProduct}
+            {/* Right 1/3 (col-span-12 lg:col-span-4): Top Platform Ranking */}
+            <div className="lg:col-span-4">
+              <ExecutiveTopPlatform
+                platforms={platformMetrics}
+                selectedPlatform={filters.platform}
+                onSelectPlatform={handleSelectPlatform}
               />
             </div>
+          </div>
 
-            {/* SECTION 4: MARKETPLACE HEATMAP & TREND MILESTONES */}
-            <div id="pdf-section-insights" className="space-y-8 mb-8">
-              {/* 8. Platform x Category Heatmap Matrix */}
-              <PlatformCategoryHeatmap
-                heatmap={heatmapData}
-                onFilterPlatformCategory={handleHeatmapFilter}
-              />
+          {/* SECTION 3: MARKETPLACES BREAKDOWN ROW (Focal Software style in Image 2) */}
+          <MarketplacesGrid
+            platforms={platformMetrics}
+            selectedPlatform={filters.platform}
+            onSelectPlatform={handleSelectPlatform}
+          />
+        </div>
 
-              {/* 9. Sales Trend Summary */}
-              <SalesTrendSummary summary={trendSummary} />
-            </div>
-          </>
-        )}
+        {/* SECTION 4: PRODUCT CATALOG & COMPARATIVE ANALYTICS */}
+        <div id="pdf-section-products" className="space-y-8 mb-8">
+          {/* Sales by Category + Top Selling Products Table */}
+          <CategoryAndProductSection
+            categories={categoryMetrics}
+            products={productMetrics}
+            selectedCategory={filters.category}
+            selectedProduct={filters.product}
+            onSelectCategory={handleSelectCategory}
+            onSelectProduct={handleSelectProduct}
+          />
+
+          {/* Monthly Sales Comparison (e.g. 2025 vs 2026) */}
+          <MonthlySalesComparison
+            data={monthlyComparison.data}
+            years={monthlyComparison.years}
+          />
+        </div>
+
+        {/* SECTION 5: MARKETPLACE HEATMAP & TREND MILESTONES */}
+        <div id="pdf-section-insights" className="space-y-8 mb-8">
+          {/* Platform x Category Heatmap Matrix */}
+          <PlatformCategoryHeatmap
+            heatmap={heatmapData}
+            onFilterPlatformCategory={handleHeatmapFilter}
+          />
+
+          {/* Sales Trend Summary */}
+          <SalesTrendSummary summary={trendSummary} />
+        </div>
 
       </main>
 

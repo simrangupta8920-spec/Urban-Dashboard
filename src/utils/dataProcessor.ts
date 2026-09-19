@@ -810,6 +810,9 @@ export function calculateKpiMetrics(
 ): KpiMetrics {
   const totalSales = filteredRecords.reduce((sum, r) => sum + r.sales, 0);
   const totalUnits = filteredRecords.reduce((sum, r) => sum + r.quantitySold, 0);
+  const totalOrders = filteredRecords.length;
+  const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
+  const avgSellingPrice = totalUnits > 0 ? totalSales / totalUnits : 0;
 
   // Determine top platform in filtered records
   const platformSalesMap: Record<string, number> = {};
@@ -913,10 +916,16 @@ export function calculateKpiMetrics(
     const currHalfSales = currHalf.reduce((s, r) => s + r.sales, 0);
 
     const growthPct = prevSales > 0 ? ((currHalfSales - prevSales) / prevSales) * 100 : null;
+    const currHalfUnits = currHalf.reduce((s, r) => s + r.quantitySold, 0);
+    const unitsGrowthPct = prevUnits > 0 ? ((currHalfUnits - prevUnits) / prevUnits) * 100 : null;
     return {
       totalSales,
       totalUnits,
+      totalOrders,
+      avgOrderValue,
+      avgSellingPrice,
       salesGrowthPct: growthPct,
+      unitsGrowthPct,
       prevPeriodSales: prevSales,
       prevPeriodUnits: prevUnits,
       prevPeriodLabel,
@@ -925,11 +934,16 @@ export function calculateKpiMetrics(
   }
 
   const salesGrowthPct = prevSales > 0 ? ((totalSales - prevSales) / prevSales) * 100 : null;
+  const unitsGrowthPct = prevUnits > 0 ? ((totalUnits - prevUnits) / prevUnits) * 100 : null;
 
   return {
     totalSales,
     totalUnits,
+    totalOrders,
+    avgOrderValue,
+    avgSellingPrice,
     salesGrowthPct,
+    unitsGrowthPct,
     prevPeriodSales: prevSales,
     prevPeriodUnits: prevUnits,
     prevPeriodLabel,
@@ -1010,14 +1024,18 @@ export function buildPlatformMetrics(
   filter: FilterState
 ): PlatformMetric[] {
   const totalSales = filteredRecords.reduce((sum, r) => sum + r.sales, 0);
-  const platformMap: Record<string, { sales: number; quantity: number }> = {};
+  const platformMap: Record<string, { sales: number; quantity: number; orders: number; monthly: Record<string, number> }> = {};
 
   filteredRecords.forEach(r => {
     if (!platformMap[r.platform]) {
-      platformMap[r.platform] = { sales: 0, quantity: 0 };
+      platformMap[r.platform] = { sales: 0, quantity: 0, orders: 0, monthly: {} };
     }
     platformMap[r.platform].sales += r.sales;
     platformMap[r.platform].quantity += r.quantitySold;
+    platformMap[r.platform].orders += 1;
+
+    const mKey = `${r.year}-${String(r.month + 1).padStart(2, '0')}`;
+    platformMap[r.platform].monthly[mKey] = (platformMap[r.platform].monthly[mKey] || 0) + r.sales;
   });
 
   // Calculate growth per platform by comparing with previous period
@@ -1061,13 +1079,28 @@ export function buildPlatformMetrics(
     const sharePct = totalSales > 0 ? (data.sales / totalSales) * 100 : 0;
     const prevS = prevPlatformMap[platform];
     const growthPct = prevS && prevS > 0 ? ((data.sales - prevS) / prevS) * 100 : null;
+    const avgOrderValue = data.orders > 0 ? data.sales / data.orders : 0;
+
+    const monthlyTrend = Object.entries(data.monthly)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([m, s]) => {
+        const parts = m.split('-');
+        const mIndex = parseInt(parts[1], 10) - 1;
+        return {
+          month: MONTH_NAMES[mIndex] || m,
+          sales: s,
+        };
+      });
 
     return {
       platform,
       sales: data.sales,
       quantity: data.quantity,
+      orders: data.orders,
+      avgOrderValue,
       sharePct,
       growthPct,
+      monthlyTrend,
     };
   });
 

@@ -18,6 +18,7 @@ interface HeaderProps {
   liveSyncStatus?: LiveSyncStatus;
   liveSyncInterval?: number;
   onOpenLiveSyncModal?: () => void;
+  onClearData?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -34,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   liveSyncStatus = 'idle',
   liveSyncInterval = 30,
   onOpenLiveSyncModal,
+  onClearData,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -48,38 +50,43 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           
-          {/* Brand & Title: Official Urban Organic Identity */}
+          {/* Brand & Title: Official Urban Organic Identity with Logo Image */}
           <div className="flex items-center gap-3.5">
             <BrandLogo variant="horizontal" />
           </div>
 
           {/* Right Controls: Mode Toggle & Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            {/* Demo Data | My Data Segmented Control */}
-            <div className="inline-flex p-1 rounded-xl bg-[#F4F2E6] border border-[#E4E2CD] text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => onToggleDataSource('demo')}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  dataSourceMode === 'demo'
-                    ? 'bg-white text-[#2A4B23] shadow-xs font-bold'
-                    : 'text-[#5A6B5D] hover:text-[#18261B]'
-                }`}
-              >
-                Demo Data
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleDataSource('user')}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  dataSourceMode === 'user'
-                    ? 'bg-white text-[#2A4B23] shadow-xs font-bold'
-                    : 'text-[#5A6B5D] hover:text-[#18261B]'
-                }`}
-              >
-                My Data
-              </button>
-            </div>
+            {/* Status indicator: 0 data or Active records */}
+            {allRecordsCount === 0 ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F8F7F0] border border-[#E5E2D0] text-xs text-[#627364]">
+                <span className="w-2 h-2 rounded-full bg-[#D97706] animate-pulse"></span>
+                <span className="font-medium">All Data: 0</span>
+                <button
+                  type="button"
+                  onClick={() => onToggleDataSource('demo')}
+                  className="text-[11px] text-[#2A4B23] font-semibold hover:underline ml-1 cursor-pointer"
+                  title="Optionally load sample dataset"
+                >
+                  (Sample Data)
+                </button>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#EAF3EC] border border-[#CFE4D4] text-xs text-[#1B4324] font-semibold">
+                <span className="w-2 h-2 rounded-full bg-[#234E33]"></span>
+                <span>{allRecordsCount.toLocaleString()} Records Active</span>
+                {onClearData && (
+                  <button
+                    type="button"
+                    onClick={onClearData}
+                    className="ml-1 text-[11px] text-rose-700 hover:text-rose-900 underline font-normal cursor-pointer"
+                    title="Reset and clear all data back to 0"
+                  >
+                    Clear to 0
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Hidden File Input */}
             <input

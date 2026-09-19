@@ -43,6 +43,30 @@ export const SalesByPlatform: React.FC<SalesByPlatformProps> = ({
   selectedPlatform,
   onSelectPlatform,
 }) => {
+  if (platforms.length === 0) {
+    return (
+      <section className="bg-white rounded-3xl border border-[#E5E0D8] p-5 sm:p-7 shadow-xs mb-8">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 rounded-xl bg-[#F4F1EA] text-[#637365] flex items-center justify-center">
+            <Layers className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="font-display font-bold text-xl text-[#18261B] tracking-tight">
+              Sales by Platform
+            </h3>
+            <p className="text-xs text-[#5E7060]">
+              Marketplace distribution and channel velocity
+            </p>
+          </div>
+        </div>
+        <div className="p-8 text-center bg-[#FCFBF8] rounded-2xl border border-dashed border-[#E5E0D8] text-xs text-[#7A8C7E]">
+          <p className="font-semibold text-sm text-[#18261B]">No Platform Data Loaded</p>
+          <p className="mt-1">All platform sales values are 0 (₹ 0). Upload an Excel/CSV file or link a Google Sheet to view marketplace sales distribution.</p>
+        </div>
+      </section>
+    );
+  }
+
   const pieData = platforms.map(p => ({
     name: p.platform,
     value: p.sales,

@@ -53,13 +53,11 @@ export const SalesTrendSummary: React.FC<SalesTrendSummaryProps> = ({ summary })
               Highest Sales Month
             </span>
             <div className="font-display font-bold text-base text-[#18261B] mt-0.5 truncate">
-              {highestSalesMonth ? highestSalesMonth.label : '—'}
+              {highestSalesMonth ? highestSalesMonth.label : '0 (None)'}
             </div>
-            {highestSalesMonth && (
-              <p className="text-xs text-[#2D6A4F] font-semibold mt-1">
-                {formatLakhs(highestSalesMonth.sales)}
-              </p>
-            )}
+            <p className="text-xs text-[#5E7060] font-semibold mt-1">
+              {highestSalesMonth ? formatLakhs(highestSalesMonth.sales) : '₹ 0'}
+            </p>
           </div>
         </div>
 
@@ -73,13 +71,11 @@ export const SalesTrendSummary: React.FC<SalesTrendSummaryProps> = ({ summary })
               Lowest Sales Month
             </span>
             <div className="font-display font-bold text-base text-[#18261B] mt-0.5 truncate">
-              {lowestSalesMonth ? lowestSalesMonth.label : '—'}
+              {lowestSalesMonth ? lowestSalesMonth.label : '0 (None)'}
             </div>
-            {lowestSalesMonth && (
-              <p className="text-xs text-[#6C7D6F] font-medium mt-1">
-                {formatLakhs(lowestSalesMonth.sales)}
-              </p>
-            )}
+            <p className="text-xs text-[#6C7D6F] font-medium mt-1">
+              {lowestSalesMonth ? formatLakhs(lowestSalesMonth.sales) : '₹ 0'}
+            </p>
           </div>
         </div>
 
@@ -93,13 +89,11 @@ export const SalesTrendSummary: React.FC<SalesTrendSummaryProps> = ({ summary })
               Highest Growth Month
             </span>
             <div className="font-display font-bold text-base text-[#18261B] mt-0.5 truncate">
-              {highestGrowthMonth ? highestGrowthMonth.label : '—'}
+              {highestGrowthMonth ? highestGrowthMonth.label : '0 (None)'}
             </div>
-            {highestGrowthMonth && (
-              <p className="text-xs text-[#A25D34] font-semibold mt-1">
-                {formatGrowth(highestGrowthMonth.growthPct)} MoM ({formatLakhs(highestGrowthMonth.sales, true)})
-              </p>
-            )}
+            <p className="text-xs text-[#A25D34] font-semibold mt-1">
+              {highestGrowthMonth ? `${formatGrowth(highestGrowthMonth.growthPct)} MoM (${formatLakhs(highestGrowthMonth.sales, true)})` : '0.0% MoM (₹ 0)'}
+            </p>
           </div>
         </div>
 
@@ -113,13 +107,11 @@ export const SalesTrendSummary: React.FC<SalesTrendSummaryProps> = ({ summary })
               Best Performing Platform
             </span>
             <div className="font-display font-bold text-base text-[#18261B] mt-0.5 truncate">
-              {bestPlatform ? bestPlatform.name : '—'}
+              {bestPlatform ? bestPlatform.name : '0 (None)'}
             </div>
-            {bestPlatform && (
-              <p className="text-xs text-[#2D6A4F] font-semibold mt-1">
-                {formatLakhs(bestPlatform.sales)} ({formatPercentage(bestPlatform.sharePct)} share)
-              </p>
-            )}
+            <p className="text-xs text-[#5E7060] font-semibold mt-1">
+              {bestPlatform ? `${formatLakhs(bestPlatform.sales)} (${formatPercentage(bestPlatform.sharePct)} share)` : '₹ 0 (0% share)'}
+            </p>
           </div>
         </div>
 
@@ -133,13 +125,11 @@ export const SalesTrendSummary: React.FC<SalesTrendSummaryProps> = ({ summary })
               Best Selling Category
             </span>
             <div className="font-display font-bold text-base text-[#18261B] mt-0.5 truncate">
-              {bestCategory ? bestCategory.name : '—'}
+              {bestCategory ? bestCategory.name : '0 (None)'}
             </div>
-            {bestCategory && (
-              <p className="text-xs text-[#2D6A4F] font-semibold mt-1">
-                {formatLakhs(bestCategory.sales)} ({formatPercentage(bestCategory.sharePct)} share)
-              </p>
-            )}
+            <p className="text-xs text-[#5E7060] font-semibold mt-1">
+              {bestCategory ? `${formatLakhs(bestCategory.sales)} (${formatPercentage(bestCategory.sharePct)} share)` : '₹ 0 (0% share)'}
+            </p>
           </div>
         </div>
 
@@ -153,13 +143,11 @@ export const SalesTrendSummary: React.FC<SalesTrendSummaryProps> = ({ summary })
               Best Selling Product
             </span>
             <div className="font-display font-bold text-base text-[#18261B] mt-0.5 truncate" title={bestProduct?.name}>
-              {bestProduct ? bestProduct.name : '—'}
+              {bestProduct ? bestProduct.name : '0 (None)'}
             </div>
-            {bestProduct && (
-              <p className="text-xs text-[#2D6A4F] font-semibold mt-1">
-                {formatLakhs(bestProduct.sales)} ({formatQuantity(bestProduct.quantity)} units)
-              </p>
-            )}
+            <p className="text-xs text-[#5E7060] font-semibold mt-1">
+              {bestProduct ? `${formatLakhs(bestProduct.sales)} (${formatQuantity(bestProduct.quantity)} units)` : '₹ 0 (0 units)'}
+            </p>
           </div>
         </div>
 

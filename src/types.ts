@@ -47,7 +47,11 @@ export interface FilterState {
 export interface KpiMetrics {
   totalSales: number;
   totalUnits: number;
+  totalOrders: number;
+  avgOrderValue: number;
+  avgSellingPrice?: number;
   salesGrowthPct: number | null;
+  unitsGrowthPct?: number | null;
   prevPeriodSales: number;
   prevPeriodUnits: number;
   prevPeriodLabel: string;
@@ -62,8 +66,11 @@ export interface PlatformMetric {
   platform: string;
   sales: number;
   quantity: number;
+  orders: number;
+  avgOrderValue: number;
   sharePct: number;
   growthPct: number | null;
+  monthlyTrend?: { month: string; sales: number }[];
 }
 
 export interface CategoryMetric {
