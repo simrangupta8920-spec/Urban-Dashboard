@@ -12,6 +12,7 @@ import {
   LiveSyncConfig,
   LiveSyncIntervalSeconds,
   LiveSyncStatus,
+  SheetSummary,
 } from './types';
 import { generateFullSampleDataset } from './data/sampleData';
 import {
@@ -107,6 +108,7 @@ export default function App() {
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTER);
+  const [sheetsSummary, setSheetsSummary] = useState<SheetSummary[]>([]);
 
   // Time granularity for hero chart: 'daily' | 'weekly' | 'monthly'
   const [granularity, setGranularity] = useState<Granularity>('monthly');
@@ -114,7 +116,7 @@ export default function App() {
   // Determine active full records based on mode
   const currentDataset = dataSourceMode === 'demo' ? demoDataset : userDataset;
 
-  // Extract distinct platforms, categories, products, years from current active dataset
+  // Extract distinct platforms, categories, products, years, sheets from current active dataset
   const availablePlatforms = useMemo(() => {
     const s = new Set<string>();
     currentDataset.forEach(r => s.add(r.platform));
@@ -141,6 +143,14 @@ export default function App() {
     const s = new Set<string>();
     currentDataset.forEach(r => s.add(String(r.year)));
     return Array.from(s).sort();
+  }, [currentDataset]);
+
+  const availableSheets = useMemo(() => {
+    const s = new Set<string>();
+    currentDataset.forEach(r => {
+      if (r.sourceSheet) s.add(r.sourceSheet);
+    });
+    return Array.from(s);
   }, [currentDataset]);
 
   // Filter records dynamically
@@ -215,6 +225,7 @@ export default function App() {
       }
 
       setUserDataset(records);
+      setSheetsSummary(report.sheetsSummary || []);
       setDataSourceMode('user');
       setFilters(INITIAL_FILTER);
     } catch (err: any) {
@@ -230,6 +241,7 @@ export default function App() {
       setActiveMapping(newMapping);
       if (records.length > 0) {
         setUserDataset(records);
+        setSheetsSummary(report.sheetsSummary || []);
         setDataSourceMode('user');
         setUploadError(null);
         setFilters(INITIAL_FILTER);
@@ -334,6 +346,7 @@ export default function App() {
 
       const prevCount = userDataset.length;
       setUserDataset(records);
+      setSheetsSummary(report.sheetsSummary || []);
       setDataSourceMode('user');
       setUploadError(null);
       setLiveSyncStatus('connected');
@@ -549,6 +562,8 @@ export default function App() {
               categories={availableCategories}
               products={availableProducts}
               years={availableYears}
+              sheets={availableSheets}
+              sheetsSummary={sheetsSummary}
               totalRecords={currentDataset.length}
               filteredCount={filteredRecords.length}
             />

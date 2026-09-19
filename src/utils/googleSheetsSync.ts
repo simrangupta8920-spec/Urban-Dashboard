@@ -122,7 +122,9 @@ export function parseGoogleSheetUrl(rawInput: string): ParsedSheetInfo {
 /**
  * Fetches raw CSV data from the sheet URL using our server proxy with browser fallback
  */
-export async function fetchLiveSheetData(sheetUrl: string): Promise<{ rawText: string; sheetId?: string; gid?: string }> {
+export async function fetchLiveSheetData(
+  sheetUrl: string
+): Promise<{ rawText?: string; arrayBuffer?: ArrayBuffer; sheetId?: string; gid?: string }> {
   const parsed = parseGoogleSheetUrl(sheetUrl);
 
   if (!parsed.isValid) {
@@ -142,11 +144,16 @@ export async function fetchLiveSheetData(sheetUrl: string): Promise<{ rawText: s
     if (!res.ok) {
       throw new Error(`Failed to fetch sample live data (HTTP ${res.status})`);
     }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('spreadsheetml') || contentType.includes('octet-stream') || contentType.includes('excel')) {
+      const arrayBuffer = await res.arrayBuffer();
+      return { arrayBuffer, sheetId: 'sample-stream', gid: '0' };
+    }
     const rawText = await res.text();
     return { rawText, sheetId: 'sample-stream', gid: '0' };
   }
 
-  // Call server proxy first (avoids browser CORS issues and follows redirects)
+  // Call server proxy first (fetches whole multi-sheet workbook via XLSX export or falls back to CSV)
   const proxyUrl = `/api/sync-sheet?url=${encodeURIComponent(sheetUrl)}&_t=${timestamp}`;
 
   try {
@@ -162,10 +169,16 @@ export async function fetchLiveSheetData(sheetUrl: string): Promise<{ rawText: s
       throw new Error(`Failed to fetch sheet (HTTP ${res.status})`);
     }
 
-    const rawText = await res.text();
     const sheetId = res.headers.get('X-Sheet-Id') || parsed.sheetId;
     const gid = res.headers.get('X-Sheet-Gid') || parsed.gid;
 
+    // Check if the server returned a binary multi-sheet workbook (.xlsx)
+    if (contentType.includes('spreadsheetml') || contentType.includes('octet-stream') || contentType.includes('excel')) {
+      const arrayBuffer = await res.arrayBuffer();
+      return { arrayBuffer, sheetId, gid };
+    }
+
+    const rawText = await res.text();
     return { rawText, sheetId, gid };
   } catch (proxyError: any) {
     // If the error explicitly reported private permissions, do not fallback to direct fetch (it won't work anyway)

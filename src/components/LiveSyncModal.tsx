@@ -239,7 +239,18 @@ export const LiveSyncModal: React.FC<LiveSyncModalProps> = ({
                 <Link className="w-3.5 h-3.5 text-[#1B4324]" />
                 Google Sheets Link (or published CSV)
               </label>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputUrl('/api/sample-live-sheet?format=xlsx');
+                    handleConnect('/api/sample-live-sheet?format=xlsx');
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1B4324] hover:underline cursor-pointer bg-[#E2F0E5] px-2 py-0.5 rounded-md border border-[#A8D8B6]"
+                >
+                  <Sparkles className="w-3 h-3 text-[#1B4324]" />
+                  Multi-Month Workbook (Sep & Aug)
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -248,8 +259,7 @@ export const LiveSyncModal: React.FC<LiveSyncModalProps> = ({
                   }}
                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1B4324] hover:underline cursor-pointer bg-[#EAF3EC] px-2 py-0.5 rounded-md border border-[#C5DDCB]"
                 >
-                  <Sparkles className="w-3 h-3 text-[#1B4324]" />
-                  Load User's Sheet (13 Orders)
+                  User Sheet (13 Orders)
                 </button>
                 <button
                   type="button"
@@ -275,7 +285,7 @@ export const LiveSyncModal: React.FC<LiveSyncModalProps> = ({
             </div>
 
             <p className="text-[11px] text-[#556958]">
-              Accepts any shared Google Sheet link. Headers like <code className="bg-[#EBE6DC] px-1 py-0.5 rounded text-[#18261B]">Plaltform / Platform</code>, <code className="bg-[#EBE6DC] px-1 py-0.5 rounded text-[#18261B]">Product</code>, <code className="bg-[#EBE6DC] px-1 py-0.5 rounded text-[#18261B]">Quantity Sold</code>, and <code className="bg-[#EBE6DC] px-1 py-0.5 rounded text-[#18261B]">Total Sales</code> are mapped automatically. Date and Category are auto-inferred if absent.
+              Accepts any shared Google Sheet link or Excel workbook. If your workbook contains multiple monthly tabs (e.g. <em>Sep 2026</em>, <em>Aug 2026</em>), all sheets are fetched and combined automatically, with an interactive tab switcher to view whole-workbook or month-by-month sales!
             </p>
 
             {/* Parsing preview indicator */}

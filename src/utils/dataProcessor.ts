@@ -12,6 +12,7 @@ import {
   ProductMetric,
   PlatformTimeSeriesPoint,
   SalesTrendHighlights,
+  SheetSummary,
   TimeSeriesPoint,
   ValidationReport,
 } from '../types';
@@ -21,67 +22,126 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 
 /**
  * Standardizes any date input (string, Date, or Excel serial number) to YYYY-MM-DD
+ * Preserves the exact intended calendar date without timezone skew (e.g. 1st of month remaining 1st).
  */
 export function normalizeDate(val: unknown): { iso: string; year: number; month: number; monthName: string; monthYear: string; timestamp: number } | null {
   if (val === undefined || val === null || val === '') return null;
 
-  let d: Date | null = null;
+  let year = -1;
+  let month = -1;
+  let day = -1;
 
-  // If already a JS Date
+  // 1. If already a JS Date object (e.g. from XLSX cellDates: true)
   if (val instanceof Date && !isNaN(val.getTime())) {
-    d = val;
+    // If constructed at local midnight (like XLSX does with new Date(y, m-1, d)):
+    if (val.getHours() === 0 && val.getMinutes() === 0 && val.getSeconds() === 0) {
+      year = val.getFullYear();
+      month = val.getMonth();
+      day = val.getDate();
+    }
+    // If constructed at UTC midnight (like new Date("2026-09-01T00:00:00Z")):
+    else if (val.getUTCHours() === 0 && val.getUTCMinutes() === 0 && val.getUTCSeconds() === 0) {
+      year = val.getUTCFullYear();
+      month = val.getUTCMonth();
+      day = val.getUTCDate();
+    }
+    // General fallback: prefer local calendar components
+    else {
+      year = val.getFullYear();
+      month = val.getMonth();
+      day = val.getDate();
+    }
   }
-  // Excel serial number (e.g., 45536)
+  // 2. Excel serial number (e.g., 46266 or 46266.0001)
   else if (typeof val === 'number') {
-    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-    const msPerDay = 86400000;
-    d = new Date(excelEpoch.getTime() + val * msPerDay);
+    const totalDays = Math.round(val);
+    const ms = Date.UTC(1899, 11, 30) + totalDays * 86400000;
+    const d = new Date(ms);
+    year = d.getUTCFullYear();
+    month = d.getUTCMonth();
+    day = d.getUTCDate();
   }
-  // String parsing
+  // 3. String parsing
   else if (typeof val === 'string') {
     const trimmed = val.trim();
     if (!trimmed) return null;
 
-    // Pattern: DD-MMM-YYYY (e.g. 01-Sep-2026 or 1-Sep-2026)
-    const dMonYMatch = trimmed.match(/^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{2,4})$/i);
+    // Pattern A: DD-MMM-YYYY or DD-MMM-YY (e.g. 01-Sep-26, 1-Sep-2026, 01-Sep-2026)
+    const dMonYMatch = trimmed.match(/^(\d{1,2})[-/ ]([A-Za-z]{3,9})[-/ ](\d{2,4})$/i);
     if (dMonYMatch) {
-      const day = parseInt(dMonYMatch[1], 10);
-      const monStr = dMonYMatch[2].toLowerCase();
-      let year = parseInt(dMonYMatch[3], 10);
-      if (year < 100) year += 2000;
+      const dNum = parseInt(dMonYMatch[1], 10);
+      const monStr = dMonYMatch[2].slice(0, 3).toLowerCase();
+      let yr = parseInt(dMonYMatch[3], 10);
+      if (yr < 100) yr += 2000;
       const monthIdx = MONTH_NAMES.findIndex(m => m.toLowerCase() === monStr);
       if (monthIdx !== -1) {
-        d = new Date(Date.UTC(year, monthIdx, day));
+        year = yr;
+        month = monthIdx;
+        day = dNum;
       }
     }
 
-    // Pattern: DD/MM/YYYY or DD-MM-YYYY
-    if (!d) {
+    // Pattern B: YYYY-MM-DD or YYYY/MM/DD (ISO standard, e.g. 2026-09-01)
+    if (year === -1) {
+      const isoMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+      if (isoMatch) {
+        year = parseInt(isoMatch[1], 10);
+        month = parseInt(isoMatch[2], 10) - 1;
+        day = parseInt(isoMatch[3], 10);
+      }
+    }
+
+    // Pattern C: MMM-DD-YYYY or MMM DD, YYYY (e.g. Sep 1, 2026, September 01, 2026)
+    if (year === -1) {
+      const monDYMatch = trimmed.match(/^([A-Za-z]{3,9})[-/ ](\d{1,2})(?:st|nd|rd|th)?,?[-/ ](\d{2,4})$/i);
+      if (monDYMatch) {
+        const monStr = monDYMatch[1].slice(0, 3).toLowerCase();
+        const monthIdx = MONTH_NAMES.findIndex(m => m.toLowerCase() === monStr);
+        if (monthIdx !== -1) {
+          day = parseInt(monDYMatch[2], 10);
+          let yr = parseInt(monDYMatch[3], 10);
+          if (yr < 100) yr += 2000;
+          year = yr;
+          month = monthIdx;
+        }
+      }
+    }
+
+    // Pattern D: DD/MM/YYYY or DD-MM-YYYY (e.g. 01/09/2026, 01-09-2026)
+    if (year === -1) {
       const ddmmyyyyMatch = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
       if (ddmmyyyyMatch) {
-        const day = parseInt(ddmmyyyyMatch[1], 10);
-        const month = parseInt(ddmmyyyyMatch[2], 10) - 1;
-        const year = parseInt(ddmmyyyyMatch[3], 10);
-        d = new Date(Date.UTC(year, month, day));
+        day = parseInt(ddmmyyyyMatch[1], 10);
+        month = parseInt(ddmmyyyyMatch[2], 10) - 1;
+        year = parseInt(ddmmyyyyMatch[3], 10);
       }
     }
 
-    // Standard ISO / JS fallback
-    if (!d) {
+    // Fallback JS Date parsing for other string formats
+    if (year === -1) {
       const parsed = new Date(trimmed);
       if (!isNaN(parsed.getTime())) {
-        d = parsed;
+        if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0) {
+          year = parsed.getFullYear();
+          month = parsed.getMonth();
+          day = parsed.getDate();
+        } else if (parsed.getUTCHours() === 0 && parsed.getUTCMinutes() === 0 && parsed.getUTCSeconds() === 0) {
+          year = parsed.getUTCFullYear();
+          month = parsed.getUTCMonth();
+          day = parsed.getUTCDate();
+        } else {
+          year = parsed.getFullYear();
+          month = parsed.getMonth();
+          day = parsed.getDate();
+        }
       }
     }
   }
 
-  if (!d || isNaN(d.getTime())) {
+  if (year === -1 || month === -1 || day === -1 || month < 0 || month > 11 || day < 1 || day > 31) {
     return null;
   }
 
-  const year = d.getUTCFullYear();
-  const month = d.getUTCMonth();
-  const day = d.getUTCDate();
   const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   const monthName = MONTH_NAMES[month];
   const monthYear = `${monthName} ${year}`;
@@ -288,8 +348,69 @@ export function detectColumnMapping(headers: string[]): { mapping: ColumnMapping
   return { mapping, missing };
 }
 
+const MONTH_MAP: Record<string, number> = {
+  january: 0, jan: 0,
+  february: 1, feb: 1,
+  march: 2, mar: 2,
+  april: 3, apr: 3,
+  may: 4,
+  june: 5, jun: 5,
+  july: 6, jul: 6,
+  august: 7, aug: 7,
+  september: 8, sept: 8, sep: 8,
+  october: 9, oct: 9,
+  november: 10, nov: 10,
+  december: 11, dec: 11,
+};
+
+/**
+ * Extracts month and year from a worksheet tab name (e.g. 'Sep 2026', 'September', '09-2026', 'Aug-26')
+ */
+export function parseMonthYearFromSheetName(name: string): { month: number; year: number; monthName: string } | null {
+  if (!name) return null;
+  const clean = name.trim().replace(/[_./-]/g, ' ').toLowerCase();
+
+  // Match month word tokens safely without partial word false-positives
+  const wordMatch = clean.match(/\b(january|february|march|april|may|june|july|august|september|sept|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/i);
+  let month = -1;
+  if (wordMatch) {
+    month = MONTH_MAP[wordMatch[1].toLowerCase()];
+  }
+
+  // Also check numeric month formats like '09 2026' or '2026 09'
+  if (month === -1) {
+    const numMatch = clean.match(/(?:^|\s)(0?[1-9]|1[0-2])\s+(20\d{2}|\d{2})(?:$|\s)/);
+    if (numMatch) {
+      month = parseInt(numMatch[1], 10) - 1;
+      let yr = parseInt(numMatch[2], 10);
+      if (yr < 100) yr += 2000;
+      return { month, year: yr, monthName: MONTH_NAMES[month] };
+    }
+  }
+
+  if (month === -1) return null;
+
+  // Extract year if specified in sheet name (e.g. '2026' or '26')
+  let year = 2026;
+  const yrMatch4 = clean.match(/(20\d{2})/);
+  if (yrMatch4) {
+    year = parseInt(yrMatch4[1], 10);
+  } else {
+    const yrMatch2 = clean.match(/\b(\d{2})\b/);
+    if (yrMatch2) {
+      const parsedYr = parseInt(yrMatch2[1], 10);
+      if (parsedYr >= 20 && parsedYr <= 35) {
+        year = 2000 + parsedYr;
+      }
+    }
+  }
+
+  return { month, year, monthName: MONTH_NAMES[month] };
+}
+
 /**
  * Parses an uploaded ArrayBuffer, string (CSV), or File via XLSX
+ * Iterates through ALL sheets/tabs in the workbook to capture multi-month datasets.
  */
 export async function parseUploadedFile(
   fileData: ArrayBuffer | string,
@@ -298,13 +419,9 @@ export async function parseUploadedFile(
   const workbook = typeof fileData === 'string'
     ? XLSX.read(fileData, { type: 'string', cellDates: true })
     : XLSX.read(fileData, { type: 'array', cellDates: true });
-  const firstSheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[firstSheetName];
 
-  // Parse to array of objects
-  const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
-  if (rawRows.length === 0) {
+  const sheetNames = workbook.SheetNames || [];
+  if (sheetNames.length === 0) {
     return {
       records: [],
       report: {
@@ -312,131 +429,228 @@ export async function parseUploadedFile(
         totalRowsParsed: 0,
         validRows: 0,
         skippedRows: 0,
-        errors: ['The uploaded sheet appears to be empty.'],
+        errors: ['The workbook does not contain any sheets.'],
         missingColumns: ['Product', 'Total Sales'],
         detectedColumns: [],
         initialMapping: { date: '', platform: '', productName: '', category: '', quantitySold: '', sales: '' },
-      },
-    };
-  }
-
-  const detectedColumns = Object.keys(rawRows[0] || {});
-  const { mapping: autoMapping, missing } = detectColumnMapping(detectedColumns);
-  const activeMapping = { ...autoMapping, ...(customMapping || {}) };
-
-  const errors: string[] = [];
-  if (!activeMapping.sales && !activeMapping.quantitySold) {
-    errors.push('Missing column: Sales / Total Sales');
-  }
-  if (!activeMapping.productName) {
-    errors.push('Missing column: Product Name');
-  }
-
-  if (errors.length > 0 && !customMapping) {
-    return {
-      records: [],
-      report: {
-        isValid: false,
-        totalRowsParsed: rawRows.length,
-        validRows: 0,
-        skippedRows: rawRows.length,
-        errors,
-        missingColumns: missing,
-        detectedColumns,
-        initialMapping: autoMapping,
+        sheetNames: [],
+        sheetsSummary: [],
       },
     };
   }
 
   const records: CleanSalesRecord[] = [];
-  let skippedCount = 0;
+  const sheetsSummary: SheetSummary[] = [];
+  const allDetectedColsSet = new Set<string>();
+  let primaryMapping: ColumnMapping = { date: '', platform: '', productName: '', category: '', quantitySold: '', sales: '' };
+  let primaryMissing: string[] = [];
+  let totalRowsAcrossAllSheets = 0;
+  let skippedRowsAcrossAllSheets = 0;
+  let recordCounter = 1;
 
-  // Base reference date for sheets that do not provide a date column
-  // Stagger rows across recent September 2026 dates (e.g. Sept 01 - Sept 14, 2026)
-  const totalRowCount = Math.max(1, rawRows.length);
+  for (let sIdx = 0; sIdx < sheetNames.length; sIdx++) {
+    const sheetName = sheetNames[sIdx];
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
 
-  rawRows.forEach((row, idx) => {
-    const rawDate = activeMapping.date ? row[activeMapping.date] : null;
-    const rawPlatform = activeMapping.platform ? row[activeMapping.platform] : null;
-    const rawProduct = activeMapping.productName ? row[activeMapping.productName] : null;
-    const rawCategory = activeMapping.category ? row[activeMapping.category] : null;
-    const rawQty = activeMapping.quantitySold ? row[activeMapping.quantitySold] : null;
-    const rawSales = activeMapping.sales ? row[activeMapping.sales] : null;
-
-    // Check blank row
-    if (!rawDate && !rawPlatform && !rawProduct && !rawSales && !rawQty) {
-      skippedCount++;
-      return;
+    // Parse to array of objects
+    const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+    if (rawRows.length === 0) {
+      sheetsSummary.push({
+        sheetName,
+        rowCount: 0,
+        validCount: 0,
+      });
+      continue;
     }
 
-    // Determine valid date
-    let dateInfo: { iso: string; year: number; month: number; monthName: string; monthYear: string; timestamp: number } | null = null;
+    totalRowsAcrossAllSheets += rawRows.length;
+    const sheetCols = Object.keys(rawRows[0] || {});
+    sheetCols.forEach(col => allDetectedColsSet.add(col));
 
-    if (rawDate) {
-      dateInfo = normalizeDate(rawDate);
+    const { mapping: autoMapping, missing } = detectColumnMapping(sheetCols);
+    const activeMapping = { ...autoMapping, ...(customMapping || {}) };
+
+    if (!primaryMapping.productName) {
+      primaryMapping = activeMapping;
+      primaryMissing = missing;
     }
 
-    // If no date column or date failed to parse, generate realistic active dates based on S.No or index
-    if (!dateInfo) {
-      // Stagger across days 1..18 of current month
-      const dayOffset = Math.min(18, Math.max(1, Math.floor((idx / totalRowCount) * 14) + 1));
-      const year = 2026;
-      const month = 8; // September (0-indexed)
-      const d = new Date(Date.UTC(year, month, dayOffset));
-      const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayOffset).padStart(2, '0')}`;
-      dateInfo = {
-        iso,
-        year,
-        month,
-        monthName: MONTH_NAMES[month],
-        monthYear: `${MONTH_NAMES[month]} ${year}`,
-        timestamp: d.getTime(),
-      };
+    // Check if this sheet lacks essential sales/product columns (e.g. cover page, notes, summary)
+    const hasSalesOrQty = Boolean(activeMapping.sales || activeMapping.quantitySold);
+    const hasProduct = Boolean(activeMapping.productName);
+
+    if (!hasSalesOrQty && !hasProduct) {
+      // Non-sales metadata sheet, skip gracefully
+      sheetsSummary.push({
+        sheetName,
+        rowCount: rawRows.length,
+        validCount: 0,
+      });
+      continue;
     }
 
-    const productName = String(rawProduct || 'Organic Superfood Item').trim() || 'Organic Superfood Item';
-    const platform = String(rawPlatform || 'Direct / Offline').trim() || 'Direct / Offline';
-    
-    // Auto-infer category if not present in the spreadsheet
-    const category = rawCategory && String(rawCategory).trim()
-      ? String(rawCategory).trim()
-      : inferCategoryFromProduct(productName);
+    // Check if tab name designates a specific month and year (e.g. 'Sep 2026', 'October')
+    const sheetMonthYear = parseMonthYearFromSheetName(sheetName);
+    let validCountForSheet = 0;
+    const totalRowCount = Math.max(1, rawRows.length);
 
-    const quantitySold = rawQty !== null && rawQty !== undefined && String(rawQty).trim() !== ''
-      ? Math.max(0, Math.round(parseCleanNumber(rawQty)))
-      : 1;
+    rawRows.forEach((row, rowIdx) => {
+      const rawDate = activeMapping.date ? row[activeMapping.date] : null;
+      const rawPlatform = activeMapping.platform ? row[activeMapping.platform] : null;
+      const rawProduct = activeMapping.productName ? row[activeMapping.productName] : null;
+      const rawCategory = activeMapping.category ? row[activeMapping.category] : null;
+      const rawQty = activeMapping.quantitySold ? row[activeMapping.quantitySold] : null;
+      const rawSales = activeMapping.sales ? row[activeMapping.sales] : null;
 
-    const sales = rawSales !== null && rawSales !== undefined && String(rawSales).trim() !== ''
-      ? Math.max(0, parseCleanNumber(rawSales))
-      : quantitySold * 299;
+      // Check blank row
+      if (!rawDate && !rawPlatform && !rawProduct && !rawSales && !rawQty) {
+        skippedRowsAcrossAllSheets++;
+        return;
+      }
 
-    records.push({
-      id: `order-${idx + 1}`,
-      date: dateInfo.iso,
-      timestamp: dateInfo.timestamp,
-      year: dateInfo.year,
-      month: dateInfo.month,
-      monthName: dateInfo.monthName,
-      monthYear: dateInfo.monthYear,
-      platform,
-      productName,
-      category,
-      quantitySold,
-      sales,
+      // Determine valid date
+      let dateInfo: { iso: string; year: number; month: number; monthName: string; monthYear: string; timestamp: number } | null = null;
+
+      if (rawDate) {
+        dateInfo = normalizeDate(rawDate);
+      }
+
+      // If rawDate was only a day number (like 1, 2, 3.. 31) and sheetMonthYear is known
+      if (!dateInfo && rawDate !== null && rawDate !== undefined && sheetMonthYear) {
+        const rawNum = typeof rawDate === 'number' ? rawDate : parseInt(String(rawDate).trim(), 10);
+        if (!isNaN(rawNum) && rawNum >= 1 && rawNum <= 31) {
+          const iso = `${sheetMonthYear.year}-${String(sheetMonthYear.month + 1).padStart(2, '0')}-${String(rawNum).padStart(2, '0')}`;
+          dateInfo = {
+            iso,
+            year: sheetMonthYear.year,
+            month: sheetMonthYear.month,
+            monthName: sheetMonthYear.monthName,
+            monthYear: `${sheetMonthYear.monthName} ${sheetMonthYear.year}`,
+            timestamp: Date.UTC(sheetMonthYear.year, sheetMonthYear.month, rawNum),
+          };
+        }
+      }
+
+      // If no date column or date failed to parse, use sheet month if available
+      if (!dateInfo) {
+        if (sheetMonthYear) {
+          const dayOffset = Math.min(28, Math.max(1, (rowIdx % 28) + 1));
+          const iso = `${sheetMonthYear.year}-${String(sheetMonthYear.month + 1).padStart(2, '0')}-${String(dayOffset).padStart(2, '0')}`;
+          dateInfo = {
+            iso,
+            year: sheetMonthYear.year,
+            month: sheetMonthYear.month,
+            monthName: sheetMonthYear.monthName,
+            monthYear: `${sheetMonthYear.monthName} ${sheetMonthYear.year}`,
+            timestamp: Date.UTC(sheetMonthYear.year, sheetMonthYear.month, dayOffset),
+          };
+        } else {
+          // Stagger across days 1..18 of default active month (September 2026)
+          const dayOffset = Math.min(18, Math.max(1, Math.floor((rowIdx / totalRowCount) * 14) + 1));
+          const year = 2026;
+          const month = 8; // September (0-indexed)
+          const d = new Date(Date.UTC(year, month, dayOffset));
+          const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayOffset).padStart(2, '0')}`;
+          dateInfo = {
+            iso,
+            year,
+            month,
+            monthName: MONTH_NAMES[month],
+            monthYear: `${MONTH_NAMES[month]} ${year}`,
+            timestamp: d.getTime(),
+          };
+        }
+      }
+
+      const productName = String(rawProduct || 'Organic Superfood Item').trim() || 'Organic Superfood Item';
+      const platform = String(rawPlatform || 'Direct / Offline').trim() || 'Direct / Offline';
+
+      // Auto-infer category if not present in the spreadsheet
+      const category = rawCategory && String(rawCategory).trim()
+        ? String(rawCategory).trim()
+        : inferCategoryFromProduct(productName);
+
+      const quantitySold = rawQty !== null && rawQty !== undefined && String(rawQty).trim() !== ''
+        ? Math.max(0, Math.round(parseCleanNumber(rawQty)))
+        : 1;
+
+      const sales = rawSales !== null && rawSales !== undefined && String(rawSales).trim() !== ''
+        ? Math.max(0, parseCleanNumber(rawSales))
+        : quantitySold * 299;
+
+      records.push({
+        id: `order-${recordCounter++}`,
+        date: dateInfo.iso,
+        timestamp: dateInfo.timestamp,
+        year: dateInfo.year,
+        month: dateInfo.month,
+        monthName: dateInfo.monthName,
+        monthYear: dateInfo.monthYear,
+        platform,
+        productName,
+        category,
+        quantitySold,
+        sales,
+        sourceSheet: sheetName,
+      });
+
+      validCountForSheet++;
     });
-  });
+
+    sheetsSummary.push({
+      sheetName,
+      rowCount: rawRows.length,
+      validCount: validCountForSheet,
+      detectedMonth: sheetMonthYear?.monthName,
+      detectedYear: sheetMonthYear?.year,
+    });
+  }
+
+  const detectedColumns = Array.from(allDetectedColsSet);
+
+  if (records.length === 0) {
+    const errors: string[] = [];
+    if (!primaryMapping.sales && !primaryMapping.quantitySold) {
+      errors.push('Missing column: Sales / Total Sales');
+    }
+    if (!primaryMapping.productName) {
+      errors.push('Missing column: Product Name');
+    }
+    if (errors.length === 0) {
+      errors.push('No valid sales records could be extracted from the workbook sheets.');
+    }
+
+    return {
+      records: [],
+      report: {
+        isValid: false,
+        totalRowsParsed: totalRowsAcrossAllSheets,
+        validRows: 0,
+        skippedRows: skippedRowsAcrossAllSheets,
+        errors,
+        missingColumns: primaryMissing,
+        detectedColumns,
+        initialMapping: primaryMapping,
+        sheetNames,
+        sheetsSummary,
+      },
+    };
+  }
 
   return {
     records: records.sort((a, b) => a.timestamp - b.timestamp),
     report: {
-      isValid: records.length > 0,
-      totalRowsParsed: rawRows.length,
+      isValid: true,
+      totalRowsParsed: totalRowsAcrossAllSheets,
       validRows: records.length,
-      skippedRows: skippedCount,
-      errors: records.length === 0 ? ['No valid sales records could be extracted from the file.'] : [],
-      missingColumns: missing,
+      skippedRows: skippedRowsAcrossAllSheets,
+      errors: [],
+      missingColumns: primaryMissing,
       detectedColumns,
-      initialMapping: autoMapping,
+      initialMapping: primaryMapping,
+      sheetNames,
+      sheetsSummary,
     },
   };
 }
@@ -453,6 +667,7 @@ export function filterSalesRecords(records: CleanSalesRecord[], filter: FilterSt
     if (filter.product !== 'ALL' && r.productName.toLowerCase() !== filter.product.toLowerCase()) return false;
     if (filter.month !== 'ALL' && r.month !== parseInt(filter.month, 10)) return false;
     if (filter.year !== 'ALL' && r.year !== parseInt(filter.year, 10)) return false;
+    if (filter.sheet && filter.sheet !== 'ALL' && r.sourceSheet !== filter.sheet) return false;
     return true;
   });
 }

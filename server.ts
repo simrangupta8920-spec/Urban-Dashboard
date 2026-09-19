@@ -1,9 +1,11 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import * as XLSX from 'xlsx';
 
-// Helper to resolve Google Sheets URL to direct CSV export URL
-function resolveSheetCsvUrl(rawUrl: string): {
+// Helper to resolve Google Sheets URL to direct multi-sheet XLSX or CSV export URL
+function resolveSheetUrls(rawUrl: string): {
+  xlsxUrl?: string;
   csvUrl: string;
   fallbackGvizUrl?: string;
   sheetId?: string;
@@ -19,7 +21,9 @@ function resolveSheetCsvUrl(rawUrl: string): {
     if (pubMatch) {
       const pubId = pubMatch[1];
       return {
+        xlsxUrl: `https://docs.google.com/spreadsheets/d/e/${pubId}/pub?output=xlsx`,
         csvUrl: `https://docs.google.com/spreadsheets/d/e/${pubId}/pub?output=csv&gid=${gid}`,
+        fallbackGvizUrl: `https://docs.google.com/spreadsheets/d/e/${pubId}/gviz/tq?tqx=out:csv&gid=${gid}`,
         sheetId: pubId,
         gid,
       };
@@ -34,6 +38,7 @@ function resolveSheetCsvUrl(rawUrl: string): {
     const gid = gidMatch ? gidMatch[1] : '0';
 
     return {
+      xlsxUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`,
       csvUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`,
       fallbackGvizUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`,
       sheetId,
@@ -60,40 +65,71 @@ async function startServer() {
   });
 
   // Exact Excel / Google Sheet data provided by user with dynamic live sync support
-  const USER_EXCEL_SHEET_ROWS = [
-    ['S.No', 'Plaltform', 'Product', 'Quantity Sold', 'Total Sales'],
-    ['1', 'Blinkit', 'Foxnuts Old Combo', '24', '16776'],
-    ['2', 'Amazon', 'Moringa Sattu', '7', '1575'],
-    ['3', 'Amazon', 'Masala Sattu', '27', '6075'],
-    ['4', 'Amazon', 'Foxnuts Old Combo', '3', '1497'],
-    ['5', 'Amazon', 'Himalayan Salt', '2', '398'],
-    ['6', 'Amazon', 'Plain Sattu', '1', '179'],
-    ['7', 'Amazon', 'Achari Makhana', '3', '597'],
-    ['8', 'Offline Order', 'Moringa Sattu', '1', '199.5'],
-    ['9', 'Offline Order', 'Masala Sattu', '1', '183.22'],
-    ['10', 'Offline Order', 'Peri Peri', '1', '184.5'],
-    ['11', 'Offline Order', 'Achari Makhana', '1', '179.5'],
-    ['12', 'Offline Order', 'Tangy Tomato', '1', '179.5'],
-    ['13', 'Offline Order', 'Blue Pea Tea', '1', '399.5'],
+  const USER_EXCEL_SHEET_SEP_ROWS = [
+    ['S.No', 'Date', 'Plaltform', 'Product', 'Quantity Sold', 'Total Sales'],
+    ['1', '01-Sep-26', 'Blinkit', 'Foxnuts Old Combo', '24', '16776'],
+    ['2', '01-Sep-26', 'Amazon', 'Moringa Sattu', '7', '1575'],
+    ['3', '02-Sep-26', 'Amazon', 'Masala Sattu', '27', '6075'],
+    ['4', '03-Sep-26', 'Amazon', 'Foxnuts Old Combo', '3', '1497'],
+    ['5', '04-Sep-26', 'Amazon', 'Himalayan Salt', '2', '398'],
+    ['6', '05-Sep-26', 'Amazon', 'Plain Sattu', '1', '179'],
+    ['7', '06-Sep-26', 'Amazon', 'Achari Makhana', '3', '597'],
+    ['8', '07-Sep-26', 'Offline Order', 'Moringa Sattu', '1', '199.5'],
+    ['9', '08-Sep-26', 'Offline Order', 'Masala Sattu', '1', '183.22'],
+    ['10', '09-Sep-26', 'Offline Order', 'Peri Peri', '1', '184.5'],
+    ['11', '10-Sep-26', 'Offline Order', 'Achari Makhana', '1', '179.5'],
+    ['12', '11-Sep-26', 'Offline Order', 'Tangy Tomato', '1', '179.5'],
+    ['13', '12-Sep-26', 'Offline Order', 'Blue Pea Tea', '1', '399.5'],
   ];
 
-  // User Google Sheet live endpoint
+  const USER_EXCEL_SHEET_AUG_ROWS = [
+    ['S.No', 'Date', 'Plaltform', 'Product', 'Quantity Sold', 'Total Sales'],
+    ['1', '01-Aug-26', 'Amazon', 'Foxnuts Old Combo', '18', '12582'],
+    ['2', '04-Aug-26', 'Blinkit', 'Moringa Sattu', '12', '2700'],
+    ['3', '08-Aug-26', 'Amazon', 'Masala Sattu', '20', '4500'],
+    ['4', '12-Aug-26', 'Offline Order', 'Peri Peri', '14', '2583'],
+    ['5', '16-Aug-26', 'Blinkit', 'Achari Makhana', '15', '2985'],
+    ['6', '20-Aug-26', 'Amazon', 'Tangy Tomato', '10', '1795'],
+    ['7', '24-Aug-26', 'Blinkit', 'Foxnuts Old Combo', '22', '15378'],
+    ['8', '28-Aug-26', 'Offline Order', 'Blue Pea Tea', '8', '3196'],
+  ];
+
+  // User Google Sheet live endpoint (supports both multi-sheet XLSX and CSV)
   app.get(['/api/sample-live-sheet', '/api/user-sheet'], (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+    const wantsXlsx =
+      req.query.format === 'xlsx' ||
+      Boolean(req.headers.accept?.includes('spreadsheetml')) ||
+      Boolean(req.headers.accept?.includes('application/octet-stream'));
+
+    if (wantsXlsx) {
+      // Build a multi-sheet workbook with September and August tabs
+      const wb = XLSX.utils.book_new();
+      const wsSep = XLSX.utils.aoa_to_sheet(USER_EXCEL_SHEET_SEP_ROWS);
+      const wsAug = XLSX.utils.aoa_to_sheet(USER_EXCEL_SHEET_AUG_ROWS);
+      XLSX.utils.book_append_sheet(wb, wsSep, 'Sep 2026');
+      XLSX.utils.book_append_sheet(wb, wsAug, 'Aug 2026');
+
+      const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="Urban_Organic_MultiMonth_Sales.xlsx"');
+      return res.send(buffer);
+    }
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
 
     // Clone base rows
-    const rows = USER_EXCEL_SHEET_ROWS.map(r => [...r]);
+    const rows = USER_EXCEL_SHEET_SEP_ROWS.map(r => [...r]);
 
     // Check if live simulation is requested or during recurring polling
-    // Every 30s cycle, an extra live marketplace order arrives to demonstrate active streaming
     const cycleCount = Math.floor(Date.now() / 30000) % 6;
     const additionalLiveOrders = [
-      ['14', 'Blinkit', 'Achari Makhana', '6', '1194'],
-      ['15', 'Amazon', 'Foxnuts Old Combo', '12', '8388'],
-      ['16', 'Offline Order', 'Moringa Sattu', '4', '798'],
-      ['17', 'Amazon', 'Masala Sattu', '15', '3375'],
-      ['18', 'Blinkit', 'Peri Peri', '8', '1476'],
+      ['14', '13-Sep-26', 'Blinkit', 'Achari Makhana', '6', '1194'],
+      ['15', '14-Sep-26', 'Amazon', 'Foxnuts Old Combo', '12', '8388'],
+      ['16', '15-Sep-26', 'Offline Order', 'Moringa Sattu', '4', '798'],
+      ['17', '15-Sep-26', 'Amazon', 'Masala Sattu', '15', '3375'],
+      ['18', '16-Sep-26', 'Blinkit', 'Peri Peri', '8', '1476'],
     ];
 
     for (let i = 0; i < cycleCount && i < additionalLiveOrders.length; i++) {
@@ -112,6 +148,7 @@ async function startServer() {
   });
 
   // Proxy endpoint to fetch live Google Sheets data bypassing CORS
+  // Fetches entire multi-sheet workbook via XLSX export or falls back to CSV
   app.all('/api/sync-sheet', async (req, res) => {
     try {
       const sheetUrl = (req.query.url as string) || (req.body && req.body.url);
@@ -120,13 +157,47 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing or invalid "url" parameter for Google Sheet.' });
       }
 
-      const { csvUrl, fallbackGvizUrl, sheetId, gid } = resolveSheetCsvUrl(sheetUrl);
+      const { xlsxUrl, csvUrl, fallbackGvizUrl, sheetId, gid } = resolveSheetUrls(sheetUrl);
 
       // Disable response caching so live sync polls always get the latest sheet revision
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
 
+      // 1. Attempt to fetch the entire multi-sheet workbook (.xlsx) first
+      if (xlsxUrl) {
+        try {
+          const xlsxResponse = await fetch(xlsxUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*',
+            },
+            redirect: 'follow',
+          });
+
+          const xlsxContentType = xlsxResponse.headers.get('content-type') || '';
+          if (
+            xlsxResponse.ok &&
+            (xlsxContentType.includes('spreadsheetml') ||
+              xlsxContentType.includes('octet-stream') ||
+              xlsxContentType.includes('excel'))
+          ) {
+            const buffer = Buffer.from(await xlsxResponse.arrayBuffer());
+            // Double check valid ZIP/XLSX magic bytes (0x50 0x4B 0x03 0x04)
+            if (buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4B) {
+              res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+              res.setHeader('X-Sheet-Id', sheetId || '');
+              res.setHeader('X-Sheet-Gid', gid);
+              res.setHeader('X-Synced-At', new Date().toISOString());
+              return res.status(200).send(buffer);
+            }
+          }
+        } catch (xlsxErr) {
+          console.warn('[Sync] Multi-sheet XLSX export attempt error, falling back to CSV:', xlsxErr);
+        }
+      }
+
+      // 2. Fallback to CSV endpoint
       let fetchUrl = csvUrl;
       let response = await fetch(fetchUrl, {
         headers: {
@@ -165,7 +236,7 @@ async function startServer() {
         });
       }
 
-      // Check if response looks like CSV
+      // Return CSV response
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('X-Sheet-Id', sheetId || '');
       res.setHeader('X-Sheet-Gid', gid);

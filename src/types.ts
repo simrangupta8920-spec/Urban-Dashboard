@@ -11,6 +11,15 @@ export interface CleanSalesRecord {
   category: string;
   quantitySold: number;
   sales: number;
+  sourceSheet?: string; // Workbook sheet tab name (e.g. 'Sep 2026', 'Oct 2026')
+}
+
+export interface SheetSummary {
+  sheetName: string;
+  rowCount: number;
+  validCount: number;
+  detectedMonth?: string;
+  detectedYear?: number;
 }
 
 export interface ColumnMapping {
@@ -32,6 +41,7 @@ export interface FilterState {
   product: string; // 'ALL' or product name
   month: string; // 'ALL' or '0'-'11'
   year: string; // 'ALL' or '2025', '2026'
+  sheet?: string; // 'ALL' or specific sheet name
 }
 
 export interface KpiMetrics {
@@ -118,6 +128,8 @@ export interface ValidationReport {
   missingColumns: string[];
   detectedColumns: string[];
   initialMapping: ColumnMapping;
+  sheetNames?: string[];
+  sheetsSummary?: SheetSummary[];
 }
 
 export type LiveSyncIntervalSeconds = 15 | 30 | 60 | 120 | 300;

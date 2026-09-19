@@ -135,6 +135,7 @@ export function generateFullSampleDataset(): CleanSalesRecord[] {
             month: m,
             monthName: monthNames[m],
             monthYear: `${monthNames[m]} ${period.year}`,
+            sourceSheet: `${monthNames[m]} ${period.year}`,
             platform: selectedPlatform,
             productName: product.name,
             category: product.category,
@@ -148,15 +149,21 @@ export function generateFullSampleDataset(): CleanSalesRecord[] {
 
   // Ensure prompt sample rows are strictly present in the dataset
   for (const s of SAMPLE_RAW_DATA) {
-    const d = new Date(`${s.date}T00:00:00Z`);
+    const parts = s.date.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const timestamp = Date.UTC(year, month, day);
+
     records.push({
       id: `seed-${recordId++}`,
       date: s.date,
-      timestamp: d.getTime(),
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth(),
-      monthName: monthNames[d.getUTCMonth()],
-      monthYear: `${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`,
+      timestamp,
+      year,
+      month,
+      monthName: monthNames[month],
+      monthYear: `${monthNames[month]} ${year}`,
+      sourceSheet: `${monthNames[month]} ${year}`,
       platform: s.platform,
       productName: s.productName,
       category: s.category,
