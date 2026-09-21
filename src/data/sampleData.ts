@@ -57,15 +57,17 @@ export function generateFullSampleDataset(): CleanSalesRecord[] {
     { name: 'Plant Protein Superfood Powder', category: 'Protein & Seeds', price: 1299, popularity: { Amazon: 1.1, Website: 1.5, Flipkart: 0.7, Blinkit: 0.5 } },
     { name: 'Ashwagandha Gold Extract', category: 'Wellness', price: 799, popularity: { Amazon: 1.4, Website: 1.3, Flipkart: 0.9, Blinkit: 0.6 } },
     { name: 'Triphala & Amla Vitality Brew', category: 'Wellness', price: 499, popularity: { Amazon: 0.9, Website: 1.0, Flipkart: 0.8, Blinkit: 0.7 } },
-    { name: 'Immunity Booster Combo Kit', category: 'Combos', price: 1499, popularity: { Amazon: 1.2, Website: 1.6, Flipkart: 0.8, Blinkit: 0.5 } },
-    { name: 'Desi Ghee & Sattu Energy Pack', category: 'Combos', price: 1149, popularity: { Amazon: 1.1, Website: 1.4, Flipkart: 0.9, Blinkit: 0.6 } },
+    { name: 'Immunity Booster Combo Kit', category: 'Combos', price: 1499, popularity: { Amazon: 1.2, Website: 1.6, Flipkart: 0.8, Blinkit: 0.5, JioMart: 0.9, Myntra: 0.7 } },
+    { name: 'Desi Ghee & Sattu Energy Pack', category: 'Combos', price: 1149, popularity: { Amazon: 1.1, Website: 1.4, Flipkart: 0.9, Blinkit: 0.6, JioMart: 1.0, Myntra: 0.6 } },
   ];
 
   const platforms = [
-    { name: 'Amazon', shareWeight: 0.42 },
-    { name: 'Website', shareWeight: 0.31 },
-    { name: 'Flipkart', shareWeight: 0.16 },
-    { name: 'Blinkit', shareWeight: 0.11 },
+    { name: 'Amazon', shareWeight: 0.30 },
+    { name: 'Flipkart', shareWeight: 0.22 },
+    { name: 'JioMart', shareWeight: 0.16 },
+    { name: 'Myntra', shareWeight: 0.12 },
+    { name: 'Blinkit', shareWeight: 0.12 },
+    { name: 'Website', shareWeight: 0.08 },
   ];
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { PlatformMetric } from '../types';
 import { getPlatformColor } from './SalesByPlatform';
+import { PlatformLogo } from './PlatformLogo';
 import { formatCurrencyINR, formatLakhs, formatQuantity } from '../utils/formatters';
 import { Store, ShoppingCart, ArrowUpRight, ArrowDownRight, Package } from 'lucide-react';
 
@@ -85,12 +86,7 @@ export const MarketplacesGrid: React.FC<MarketplacesGridProps> = ({
               <div className="p-4 sm:p-5 pb-3 border-b border-[#EFECE4]">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
-                    <div
-                      className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-2xs"
-                      style={{ backgroundColor: color }}
-                    >
-                      {p.platform.slice(0, 1).toUpperCase()}
-                    </div>
+                    <PlatformLogo platform={p.platform} size="md" />
                     <div>
                       <h4 className="font-bold text-base text-[#18261B] tracking-tight">
                         {p.platform}

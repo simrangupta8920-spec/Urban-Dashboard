@@ -39,7 +39,6 @@ import {
 } from './utils/googleSheetsSync';
 
 import { Header } from './components/Header';
-import { EmptyState } from './components/EmptyState';
 import { FilterBar } from './components/FilterBar';
 import { ExecutiveTopControlBar } from './components/ExecutiveTopControlBar';
 import { ExecutiveRevenueTrend } from './components/ExecutiveRevenueTrend';
@@ -70,13 +69,13 @@ const INITIAL_FILTER: FilterState = {
 };
 
 export default function App() {
-  // Data source mode: 'user' by default - no pre-fitted data
-  const [dataSourceMode, setDataSourceMode] = useState<'demo' | 'user'>('user');
+  // Data source mode: 'demo' by default - directly opens to the sales dashboard
+  const [dataSourceMode, setDataSourceMode] = useState<'demo' | 'user'>('demo');
 
-  // Pre-seeded demo dataset generated only if user explicitly clicks preview
+  // Pre-seeded sales dataset across Amazon, Flipkart, JioMart, Myntra, Blinkit, and Website
   const demoDataset = useMemo(() => {
-    return dataSourceMode === 'demo' ? generateFullSampleDataset() : [];
-  }, [dataSourceMode]);
+    return generateFullSampleDataset();
+  }, []);
 
   // User uploaded dataset - starts strictly empty with 0 records
   const [userDataset, setUserDataset] = useState<CleanSalesRecord[]>([]);
@@ -581,59 +580,6 @@ export default function App() {
                 className="px-2.5 py-1 rounded-lg bg-[#FAF8F3] hover:bg-[#F2EFE8] border border-[#DFD9CE] text-[11px] font-semibold text-[#18261B] transition-all cursor-pointer"
               >
                 Manage
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 1. Ingestion Hero Card when dataset is empty (All Data is 0) */}
-        {currentDataset.length === 0 ? (
-          <div className="mb-8">
-            <EmptyState
-              onFileUpload={handleFileUpload}
-              onSwitchToDemo={() => setDataSourceMode('demo')}
-              onOpenLiveSync={() => setIsLiveSyncModalOpen(true)}
-              error={uploadError}
-            />
-          </div>
-        ) : (
-          /* Active Dataset Notification Banner */
-          <div className="mb-6 px-4 py-3 rounded-2xl bg-white border border-[#C5DDCB] shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#234E33]"></span>
-              <span className="font-bold text-[#18261B]">
-                {dataSourceMode === 'demo' ? 'Sample Demo Dataset' : 'Active Dataset Loaded'}
-              </span>
-              <span className="text-[#A5B8A8]">•</span>
-              <span className="text-[#556958]">
-                {currentDataset.length.toLocaleString()} sales transactions across {availablePlatforms.length} platform{availablePlatforms.length > 1 ? 's' : ''}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '.xlsx, .xls, .csv';
-                  input.onchange = (e: any) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handleFileUpload(e.target.files[0]);
-                    }
-                  };
-                  input.click();
-                }}
-                className="px-3 py-1.5 rounded-xl bg-[#EAF3EC] hover:bg-[#D9EBDC] border border-[#B5DBC0] text-xs font-semibold text-[#1B4324] transition-all cursor-pointer"
-              >
-                Upload New File
-              </button>
-              <button
-                type="button"
-                onClick={handleClearData}
-                className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 transition-all cursor-pointer"
-              >
-                Reset to 0
               </button>
             </div>
           </div>

@@ -13,10 +13,21 @@ export const OfficialLogoImage: React.FC<{ className?: string; alt?: string }> =
   className = 'w-10 h-10 sm:w-11 sm:h-11',
   alt = 'Urban Organic Logo',
 }) => {
+  const [hasError, setHasError] = React.useState(false);
+
+  if (hasError) {
+    return (
+      <div className={`flex items-center justify-center p-1 bg-[#2A4B23] rounded-xl text-white ${className}`}>
+        <LotusMark className="w-full h-full" color="#FBFAE3" secondaryColor="#E8F5DF" />
+      </div>
+    );
+  }
+
   return (
     <img
       src="/urban_organic_logo.jpg"
       alt={alt}
+      onError={() => setHasError(true)}
       className={`object-contain rounded-xl shadow-2xs shrink-0 ${className}`}
       referrerPolicy="no-referrer"
     />

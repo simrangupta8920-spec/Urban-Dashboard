@@ -1,6 +1,7 @@
 import React from 'react';
 import { PlatformMetric } from '../types';
 import { getPlatformColor } from './SalesByPlatform';
+import { PlatformLogo } from './PlatformLogo';
 import { formatCurrencyINR, formatLakhs, formatPercentage } from '../utils/formatters';
 import { Award, ShoppingBag, ArrowUpRight } from 'lucide-react';
 
@@ -56,12 +57,7 @@ export const ExecutiveTopPlatform: React.FC<ExecutiveTopPlatformProps> = ({
                 >
                   <div className="flex items-center gap-3">
                     {/* Platform logo / badge */}
-                    <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-2xs"
-                      style={{ backgroundColor: color }}
-                    >
-                      {p.platform.slice(0, 1).toUpperCase()}
-                    </div>
+                    <PlatformLogo platform={p.platform} size="sm" />
                     <div>
                       <span className="font-bold text-sm text-[#18261B] block">
                         {p.platform}
