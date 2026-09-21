@@ -34,11 +34,15 @@ import {
   loadStoredLiveSyncConfig,
   saveStoredLiveSyncConfig,
   clearStoredLiveSyncConfig,
+  loadStoredLiveSyncRecords,
+  saveStoredLiveSyncRecords,
+  clearStoredLiveSyncRecords,
   getDefaultLiveSyncConfig,
   DEFAULT_HARDCODED_GOOGLE_SHEET_URL,
 } from './utils/googleSheetsSync';
 
 import { Header } from './components/Header';
+import { OfficialLogoImage } from './components/BrandLogo';
 import { FilterBar } from './components/FilterBar';
 import { ExecutiveTopControlBar } from './components/ExecutiveTopControlBar';
 import { ExecutiveRevenueTrend } from './components/ExecutiveRevenueTrend';
@@ -69,16 +73,23 @@ const INITIAL_FILTER: FilterState = {
 };
 
 export default function App() {
-  // Data source mode: 'demo' by default - directly opens to the sales dashboard
-  const [dataSourceMode, setDataSourceMode] = useState<'demo' | 'user'>('demo');
-
-  // Pre-seeded sales dataset across Amazon, Flipkart, JioMart, Myntra, Blinkit, and Website
-  const demoDataset = useMemo(() => {
-    return generateFullSampleDataset();
+  // Load cached company live sync records if previously fetched
+  const initialCache = useMemo(() => {
+    return loadStoredLiveSyncRecords();
   }, []);
 
-  // User uploaded dataset - starts strictly empty with 0 records
-  const [userDataset, setUserDataset] = useState<CleanSalesRecord[]>([]);
+  // Data source mode: 'user' strictly so crores demo data is NEVER shown on link open
+  const [dataSourceMode, setDataSourceMode] = useState<'demo' | 'user'>('user');
+
+  // Pre-seeded demo dataset (only generated if user explicitly requests demo mode)
+  const demoDataset = useMemo(() => {
+    return dataSourceMode === 'demo' ? generateFullSampleDataset() : [];
+  }, [dataSourceMode]);
+
+  // User live sync dataset - initialized immediately with cached company records if available
+  const [userDataset, setUserDataset] = useState<CleanSalesRecord[]>(() => {
+    return initialCache?.records || [];
+  });
   const [userRawBuffer, setUserRawBuffer] = useState<ArrayBuffer | null>(null);
   const [detectedColumns, setDetectedColumns] = useState<string[]>([]);
   const [activeMapping, setActiveMapping] = useState<ColumnMapping>({
@@ -112,7 +123,9 @@ export default function App() {
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTER);
-  const [sheetsSummary, setSheetsSummary] = useState<SheetSummary[]>([]);
+  const [sheetsSummary, setSheetsSummary] = useState<SheetSummary[]>(() => {
+    return initialCache?.sheetsSummary || [];
+  });
 
   // Time granularity for hero chart: 'daily' | 'weekly' | 'monthly'
   const [granularity, setGranularity] = useState<Granularity>('monthly');
@@ -309,6 +322,8 @@ export default function App() {
   const handleClearData = () => {
     setUserDataset([]);
     setUserRawBuffer(null);
+    setSheetsSummary([]);
+    clearStoredLiveSyncRecords();
     setDataSourceMode('user');
     setUploadError(null);
     setFilters(INITIAL_FILTER);
@@ -385,6 +400,7 @@ export default function App() {
       const prevCount = userDataset.length;
       setUserDataset(records);
       setSheetsSummary(report.sheetsSummary || []);
+      saveStoredLiveSyncRecords(records, report.sheetsSummary);
       setDataSourceMode('user');
       setUploadError(null);
       setLiveSyncStatus('connected');
@@ -501,8 +517,45 @@ export default function App() {
     setTimeout(() => setPdfToast(null), 3500);
   };
 
-  // Check if we should show empty state
-  const showEmptyState = dataSourceMode === 'user' && userDataset.length === 0;
+  // When dataset is empty and live sync is actively connecting on initial link open
+  const isInitialSyncLoading =
+    dataSourceMode === 'user' &&
+    userDataset.length === 0 &&
+    (liveSyncStatus === 'syncing' ||
+      (liveSyncConfig.isEnabled &&
+        Boolean(liveSyncConfig.sheetUrl) &&
+        liveSyncStatus !== 'error' &&
+        !uploadError &&
+        !liveSyncConfig.lastError));
+
+  if (isInitialSyncLoading) {
+    return (
+      <div className="min-h-screen bg-[#FBFBFA] text-[#18261B] flex flex-col items-center justify-center p-6 text-center">
+        <div className="flex flex-col items-center max-w-md w-full bg-white rounded-3xl border border-[#E5DFD5] shadow-sm p-8 sm:p-10">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border border-[#E2E1C4] shadow-xs bg-white p-1 mb-4 animate-pulse">
+            <OfficialLogoImage className="w-full h-full object-contain" />
+          </div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#EAF3EC] border border-[#CFE4D4] text-[#1B4324] text-xs font-semibold mb-3">
+            <span className="w-2 h-2 rounded-full bg-[#2D6A4F] animate-ping"></span>
+            Urban Organic Superfood
+          </div>
+          <h2 className="font-display font-bold text-2xl text-[#18261B] tracking-tight mb-2">
+            Loading Live Company Data
+          </h2>
+          <p className="text-xs sm:text-sm text-[#5E6F61] leading-relaxed mb-6">
+            Connecting to your official Google Sheet and synchronizing live sales transactions across Amazon, Flipkart, JioMart, Myntra, Blinkit, and Website...
+          </p>
+          <div className="w-full bg-[#F0EFEB] rounded-full h-1.5 overflow-hidden mb-4">
+            <div className="bg-[#2D6A4F] h-full rounded-full animate-pulse w-3/4"></div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-[#2A4B23] font-medium">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#2A4B23]" />
+            <span>Synchronizing spreadsheet...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FBFBFA] text-[#18261B] flex flex-col font-sans">

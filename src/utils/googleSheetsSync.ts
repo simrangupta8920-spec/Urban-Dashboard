@@ -1,4 +1,4 @@
-import { LiveSyncConfig, LiveSyncIntervalSeconds } from '../types';
+import { CleanSalesRecord, LiveSyncConfig, LiveSyncIntervalSeconds, SheetSummary } from '../types';
 
 export const DEFAULT_SYNC_INTERVAL: LiveSyncIntervalSeconds = 30;
 
@@ -10,6 +10,7 @@ export const DEFAULT_SYNC_INTERVAL: LiveSyncIntervalSeconds = 30;
 export const DEFAULT_HARDCODED_GOOGLE_SHEET_URL: string = 'https://docs.google.com/spreadsheets/d/11oEKaPyR0ykpNM52PYmknnfXvB_kYMNK75NoG6tQsmE/edit?gid=470407322#gid=470407322';
 
 const STORAGE_KEY = 'urban_organic_live_sheet_sync_v1';
+const RECORDS_STORAGE_KEY = 'urban_organic_live_sheet_records_v1';
 
 export interface ParsedSheetInfo {
   isValid: boolean;
@@ -259,5 +260,45 @@ export function clearStoredLiveSyncConfig(): void {
     localStorage.removeItem(STORAGE_KEY);
   } catch (e) {
     console.warn('Failed to clear live sync config', e);
+  }
+}
+
+export function loadStoredLiveSyncRecords(): { records: CleanSalesRecord[]; sheetsSummary: SheetSummary[] } | null {
+  try {
+    const saved = localStorage.getItem(RECORDS_STORAGE_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    if (parsed && Array.isArray(parsed.records) && parsed.records.length > 0) {
+      return {
+        records: parsed.records,
+        sheetsSummary: Array.isArray(parsed.sheetsSummary) ? parsed.sheetsSummary : [],
+      };
+    }
+  } catch (e) {
+    console.warn('Failed to load cached records from localStorage', e);
+  }
+  return null;
+}
+
+export function saveStoredLiveSyncRecords(records: CleanSalesRecord[], sheetsSummary?: SheetSummary[]): void {
+  try {
+    localStorage.setItem(
+      RECORDS_STORAGE_KEY,
+      JSON.stringify({
+        records,
+        sheetsSummary: sheetsSummary || [],
+        savedAt: Date.now(),
+      })
+    );
+  } catch (e) {
+    console.warn('Failed to save records to localStorage', e);
+  }
+}
+
+export function clearStoredLiveSyncRecords(): void {
+  try {
+    localStorage.removeItem(RECORDS_STORAGE_KEY);
+  } catch (e) {
+    console.warn('Failed to clear cached records', e);
   }
 }

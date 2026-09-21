@@ -62,14 +62,6 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F8F7F0] border border-[#E5E2D0] text-xs text-[#627364]">
                 <span className="w-2 h-2 rounded-full bg-[#D97706] animate-pulse"></span>
                 <span className="font-medium">All Data: 0</span>
-                <button
-                  type="button"
-                  onClick={() => onToggleDataSource('demo')}
-                  className="text-[11px] text-[#2A4B23] font-semibold hover:underline ml-1 cursor-pointer"
-                  title="Optionally load sample dataset"
-                >
-                  (Sample Data)
-                </button>
               </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#EAF3EC] border border-[#CFE4D4] text-xs text-[#1B4324] font-semibold">
