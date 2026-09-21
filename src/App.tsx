@@ -34,6 +34,8 @@ import {
   loadStoredLiveSyncConfig,
   saveStoredLiveSyncConfig,
   clearStoredLiveSyncConfig,
+  getDefaultLiveSyncConfig,
+  DEFAULT_HARDCODED_GOOGLE_SHEET_URL,
 } from './utils/googleSheetsSync';
 
 import { Header } from './components/Header';
@@ -98,19 +100,13 @@ export default function App() {
   const [pdfToast, setPdfToast] = useState<{ message: string; type: 'info' | 'success' | 'error' } | null>(null);
   const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState<boolean>(false);
 
-  // Live Sync State
+  // Live Sync State - Hardcoded default link automatically loaded on start
   const [liveSyncConfig, setLiveSyncConfig] = useState<LiveSyncConfig>(() => {
-    return loadStoredLiveSyncConfig() || {
-      sheetUrl: '',
-      intervalSeconds: 30,
-      isEnabled: false,
-      lastSyncedAt: null,
-      lastError: null,
-    };
+    return loadStoredLiveSyncConfig();
   });
   const [liveSyncStatus, setLiveSyncStatus] = useState<LiveSyncStatus>(() => {
     const stored = loadStoredLiveSyncConfig();
-    return stored && stored.isEnabled && stored.sheetUrl ? 'connected' : 'idle';
+    return stored.isEnabled && stored.sheetUrl ? 'connected' : 'idle';
   });
   const [nextSyncCountdown, setNextSyncCountdown] = useState<number>(30);
   const [isLiveSyncModalOpen, setIsLiveSyncModalOpen] = useState<boolean>(false);

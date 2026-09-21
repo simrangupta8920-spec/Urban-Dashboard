@@ -17,7 +17,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { LiveSyncConfig, LiveSyncIntervalSeconds, LiveSyncStatus } from '../types';
-import { parseGoogleSheetUrl } from '../utils/googleSheetsSync';
+import { parseGoogleSheetUrl, DEFAULT_HARDCODED_GOOGLE_SHEET_URL } from '../utils/googleSheetsSync';
 
 interface LiveSyncModalProps {
   isOpen: boolean;
@@ -243,23 +243,23 @@ export const LiveSyncModal: React.FC<LiveSyncModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setInputUrl(DEFAULT_HARDCODED_GOOGLE_SHEET_URL);
+                    handleConnect(DEFAULT_HARDCODED_GOOGLE_SHEET_URL);
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1B4324] hover:underline cursor-pointer bg-[#D4EAD9] px-2 py-0.5 rounded-md border border-[#96CBA1]"
+                >
+                  <Sparkles className="w-3 h-3 text-[#1B4324]" />
+                  Hardcoded Company Link
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setInputUrl('/api/sample-live-sheet?format=xlsx');
                     handleConnect('/api/sample-live-sheet?format=xlsx');
                   }}
                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1B4324] hover:underline cursor-pointer bg-[#E2F0E5] px-2 py-0.5 rounded-md border border-[#A8D8B6]"
                 >
-                  <Sparkles className="w-3 h-3 text-[#1B4324]" />
-                  Multi-Month Workbook (Sep & Aug)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInputUrl('/api/user-sheet');
-                    handleConnect('/api/user-sheet');
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1B4324] hover:underline cursor-pointer bg-[#EAF3EC] px-2 py-0.5 rounded-md border border-[#C5DDCB]"
-                >
-                  User Sheet (13 Orders)
+                  Multi-Month Workbook
                 </button>
                 <button
                   type="button"

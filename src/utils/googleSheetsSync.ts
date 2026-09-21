@@ -2,6 +2,13 @@ import { LiveSyncConfig, LiveSyncIntervalSeconds } from '../types';
 
 export const DEFAULT_SYNC_INTERVAL: LiveSyncIntervalSeconds = 30;
 
+/**
+ * Hardcoded Google Sheet link for your company data.
+ * Whenever the dashboard opens, it automatically syncs with this Google Sheet URL.
+ * You can replace this link with your own Google Sheet URL (e.g., "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit").
+ */
+export const DEFAULT_HARDCODED_GOOGLE_SHEET_URL: string = 'https://docs.google.com/spreadsheets/d/11oEKaPyR0ykpNM52PYmknnfXvB_kYMNK75NoG6tQsmE/edit?gid=470407322#gid=470407322';
+
 const STORAGE_KEY = 'urban_organic_live_sheet_sync_v1';
 
 export interface ParsedSheetInfo {
@@ -206,16 +213,27 @@ export async function fetchLiveSheetData(
 /**
  * Storage helpers
  */
-export function loadStoredLiveSyncConfig(): LiveSyncConfig | null {
+export function getDefaultLiveSyncConfig(): LiveSyncConfig {
+  return {
+    sheetUrl: DEFAULT_HARDCODED_GOOGLE_SHEET_URL,
+    intervalSeconds: 30,
+    isEnabled: true,
+    lastSyncedAt: null,
+    lastError: null,
+    sheetTitle: 'Company Google Sheet',
+  };
+}
+
+export function loadStoredLiveSyncConfig(): LiveSyncConfig {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return null;
+    if (!saved) return getDefaultLiveSyncConfig();
     const parsed = JSON.parse(saved);
-    if (parsed && typeof parsed.sheetUrl === 'string') {
+    if (parsed && typeof parsed.sheetUrl === 'string' && parsed.sheetUrl.trim()) {
       return {
         sheetUrl: parsed.sheetUrl,
         intervalSeconds: [15, 30, 60, 120, 300].includes(parsed.intervalSeconds) ? parsed.intervalSeconds : 30,
-        isEnabled: Boolean(parsed.isEnabled),
+        isEnabled: parsed.isEnabled !== undefined ? Boolean(parsed.isEnabled) : true,
         lastSyncedAt: parsed.lastSyncedAt || null,
         lastError: null,
         sheetTitle: parsed.sheetTitle || undefined,
@@ -225,7 +243,7 @@ export function loadStoredLiveSyncConfig(): LiveSyncConfig | null {
   } catch (e) {
     console.warn('Failed to load live sync config from localStorage', e);
   }
-  return null;
+  return getDefaultLiveSyncConfig();
 }
 
 export function saveStoredLiveSyncConfig(config: LiveSyncConfig): void {
